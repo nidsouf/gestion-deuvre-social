@@ -1,0 +1,9 @@
+{
+  "name": "نظام إدارة الاقتطاعات",
+  "short_name": "الاقتطاعات",
+  "start_url": "/deductions_system/index.php",
+  "display": "standalone",
+  "theme_color": "#2e7d32",
+  "background_color": "#ffffff",
+  "icons": []
+}

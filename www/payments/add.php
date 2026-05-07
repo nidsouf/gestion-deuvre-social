@@ -1,0 +1,148 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../login.php");
+    exit;
+}
+
+require_once '../config/database.php';
+
+// ========== معالجة POST قبل أي ناتج ==========
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // التحقق من المدخلات الأساسية
+    if (empty($_POST['source_id']) || empty($_POST['cheque_number']) || empty($_POST['cheque_date']) || empty($_POST['amount'])) {
+        $_SESSION['toast'] = ['message' => 'يرجى ملء جميع الحقول المطلوبة', 'type' => 'warning', 'duration' => 4000];
+        header("Location: add.php");
+        exit;
+    }
+
+    $source_id      = (int)$_POST['source_id'];
+    $cheque_number  = trim($_POST['cheque_number'] ?? '');
+    $cheque_date_raw = trim($_POST['cheque_date'] ?? '');
+    $amount         = (float)($_POST['amount'] ?? 0);
+    $quarter        = isset($_POST['quarter']) ? (int)$_POST['quarter'] : null;
+    $notes          = trim($_POST['notes'] ?? '');
+
+    // التحقق من صحة المبلغ
+    if ($amount <= 0) {
+        $_SESSION['toast'] = ['message' => 'المبلغ يجب أن يكون أكبر من صفر', 'type' => 'error', 'duration' => 4000];
+        header("Location: add.php");
+        exit;
+    }
+
+    // تحويل التاريخ إلى صيغة SQLite
+    $cheque_date = date('Y-m-d', strtotime($cheque_date_raw));
+
+    if (!$cheque_date || $cheque_date === '1970-01-01') {
+        $_SESSION['toast'] = ['message' => 'تاريخ الشيك غير صالح. يرجى اختيار تاريخ صحيح.', 'type' => 'error', 'duration' => 4000];
+        header("Location: add.php");
+        exit;
+    }
+
+    // التحقق الخاص بمصدر سعدين (id = 1) حسب الكود القديم (تعليق يقول id=2 لكن الكود يستخدم 1، سنستخدم 1 كما هو)
+    $is_saadine = ($source_id === 1); // إذا كان مصدر سعدين رقمه 1
+
+    if ($is_saadine && ($quarter < 1 || $quarter > 4)) {
+        $_SESSION['toast'] = ['message' => 'يجب اختيار رقم الربع (من 1 إلى 4) لمصدر سعدين.', 'type' => 'warning', 'duration' => 4000];
+        header("Location: add.php");
+        exit;
+    }
+
+    try {
+        // إدراج السجل
+        $stmt = $pdo->prepare("
+            INSERT INTO source_payments 
+            (source_id, cheque_number, cheque_date, amount, quarter, notes) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([$source_id, $cheque_number, $cheque_date, $amount, $quarter, $notes]);
+
+        $_SESSION['toast'] = ['message' => '✅ تم إضافة الشيك بنجاح.', 'type' => 'success', 'duration' => 3000];
+        header("Location: list.php");
+        exit;
+    } catch (Exception $e) {
+        $_SESSION['toast'] = ['message' => '❌ حدث خطأ أثناء الإضافة: ' . $e->getMessage(), 'type' => 'error', 'duration' => 5000];
+        header("Location: add.php");
+        exit;
+    }
+}
+
+// ========== جلب المصادر ==========
+$sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+?>
+
+<?php include '../includes/header.php'; ?>
+
+<div class="section">
+    <div class="section-header">
+        <h3 class="section-title">➕ إضافة شيك / قيد دفع جديد</h3>
+        <a href="list.php" class="btn-sm">🔙 العودة للقائمة</a>
+    </div>
+
+    <form method="POST" class="form-container" style="max-width: 520px; margin: 0 auto;">
+        
+        <div class="form-group">
+            <label>📁 المصدر <span style="color:red;">*</span></label>
+            <select name="source_id" id="source_id" required class="form-control">
+                <option value="">-- اختر المصدر --</option>
+                <?php foreach($sources as $src): ?>
+                    <option value="<?= $src['id'] ?>"><?= htmlspecialchars($src['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>🧾 رقم الشيك <span style="color:red;">*</span></label>
+            <input type="text" name="cheque_number" required>
+        </div>
+
+        <div class="form-group">
+            <label>📅 تاريخ الشيك <span style="color:red;">*</span></label>
+            <input type="date" name="cheque_date" required>
+        </div>
+
+        <div class="form-group">
+            <label>💰 القيمة (دج) <span style="color:red;">*</span></label>
+            <input type="number" step="0.01" name="amount" required>
+        </div>
+
+        <!-- حقل رقم الربع - يظهر فقط لمصدر سعدين (ID = 1) -->
+        <div class="form-group" id="quarter_group" style="display: none;">
+            <label>📆 رقم الربع (نظام الثلاثي) <span style="color:red;">*</span></label>
+            <select name="quarter" id="quarter" class="form-control">
+                <option value="">-- اختر الربع --</option>
+                <option value="1">الربع الأول</option>
+                <option value="2">الربع الثاني</option>
+                <option value="3">الربع الثالث</option>
+                <option value="4">الربع الرابع</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>📝 ملاحظات</label>
+            <textarea name="notes" rows="3"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">💾 حفظ الشيك</button>
+    </form>
+</div>
+
+<script>
+// إظهار / إخفاء حقل الربع تلقائياً حسب المصدر (عند اختيار مصدر سعدين id=1)
+document.getElementById('source_id').addEventListener('change', function() {
+    const selectedId = parseInt(this.value);
+    const quarterGroup = document.getElementById('quarter_group');
+    const quarterSelect = document.getElementById('quarter');
+
+    if (selectedId === 1) {   // مصدر سعدين
+        quarterGroup.style.display = 'block';
+        quarterSelect.required = true;
+    } else {
+        quarterGroup.style.display = 'none';
+        quarterSelect.required = false;
+        quarterSelect.value = '';
+    }
+});
+</script>
+
+<?php include '../includes/footer.php'; ?>
