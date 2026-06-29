@@ -1,436 +1,314 @@
 <?php
 /**
- * ======================================================
- * نظام الأمان الشامل - Security Module
- * ======================================================
- * - حماية CSRF (Cross-Site Request Forgery)
- * - التحقق من صحة المدخلات (Input Validation)
- * - حماية من XSS (Cross-Site Scripting)
- * - Rate Limiting
- * - معالجة الأخطاء الآمنة
+ * security.php - مكتبة الأمان الشاملة للنظام
+ * توفر: CSRF, XSS Protection, Input Validation, Rate Limiting, Session Security
  */
 
-// ========== CSRF Token Management ==========
+// بدء الجلسة إذا لم تكن قد بدأت
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// =============================================
+// 1. CSRF Protection (الحماية من هجمات التزوير)
+// =============================================
 
 /**
- * إنشاء أو الحصول على CSRF Token
- * @return string
+ * إنشاء وتخزين رمز CSRF جديد
+ * @return string رمز CSRF
  */
-function getCSRFToken() {
-    if (!isset($_SESSION['csrf_token'])) {
+function generateCSRFToken() {
+    if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];
 }
 
 /**
- * التحقق من صحة CSRF Token
- * @param string $token
- * @return bool
+ * عرض حقل CSRF مخفي في النماذج
  */
-function verifyCSRFToken($token) {
-    if (!isset($_SESSION['csrf_token']) || empty($token)) {
+function csrfField() {
+    $token = generateCSRFToken();
+    echo '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token) . '">';
+}
+
+/**
+ * التحقق من صحة رمز CSRF
+ * @param string|null $token الرمز المرسل (إذا كان null، يتم أخذه من POST)
+ * @return bool صحة الرمز
+ */
+function verifyCSRFToken($token = null) {
+    if ($token === null) {
+        $token = $_POST['csrf_token'] ?? '';
+    }
+    if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $token)) {
+        error_log("CSRF verification failed at " . $_SERVER['REQUEST_URI']);
         return false;
     }
-    return hash_equals($_SESSION['csrf_token'], $token);
-}
-
-/**
- * إعادة توليد CSRF Token بعد تسجيل الدخول
- */
-function regenerateCSRFToken() {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    return $_SESSION['csrf_token'];
-}
-
-// ========== Input Validation ==========
-
-/**
- * التحقق من نوع البيانات والقيم المسموحة
- * @param mixed $input
- * @param string $type
- * @param array $options
- * @return mixed|false
- */
-function validateInput($input, $type = 'string', $options = []) {
-    $input = trim($input ?? '');
-    
-    switch ($type) {
-        case 'string':
-            $maxLength = $options['max'] ?? 255;
-            $minLength = $options['min'] ?? 1;
-            if (strlen($input) < $minLength || strlen($input) > $maxLength) {
-                return false;
-            }
-            return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
-            
-        case 'email':
-            if (!filter_var($input, FILTER_VALIDATE_EMAIL)) {
-                return false;
-            }
-            return strtolower($input);
-            
-        case 'integer':
-            $int = filter_var($input, FILTER_VALIDATE_INT);
-            if ($int === false) return false;
-            $min = $options['min'] ?? PHP_INT_MIN;
-            $max = $options['max'] ?? PHP_INT_MAX;
-            if ($int < $min || $int > $max) return false;
-            return $int;
-            
-        case 'float':
-            $float = filter_var($input, FILTER_VALIDATE_FLOAT);
-            if ($float === false) return false;
-            $min = $options['min'] ?? -PHP_FLOAT_MAX;
-            $max = $options['max'] ?? PHP_FLOAT_MAX;
-            if ($float < $min || $float > $max) return false;
-            return $float;
-            
-        case 'date':
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $input)) {
-                return false;
-            }
-            // التحقق من أن التاريخ صحيح
-            $date = DateTime::createFromFormat('Y-m-d', $input);
-            return ($date && $date->format('Y-m-d') === $input) ? $input : false;
-            
-        case 'phone':
-            // رقم هاتف (أرقام وفواصل فقط)
-            if (!preg_match('/^[\d\-\+\s\(\)]{6,20}$/', $input)) {
-                return false;
-            }
-            return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
-            
-        case 'url':
-            if (!filter_var($input, FILTER_VALIDATE_URL)) {
-                return false;
-            }
-            return $input;
-            
-        case 'enum':
-            $allowed = $options['values'] ?? [];
-            return in_array($input, $allowed, true) ? $input : false;
-            
-        case 'arabic':
-            // للنصوص العربية
-            if (!preg_match('/^[\p{L}\p{N}\s\-\.,!؟]+$/u', $input)) {
-                return false;
-            }
-            $maxLength = $options['max'] ?? 500;
-            if (strlen($input) > $maxLength) return false;
-            return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
-            
-        default:
-            return htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
-    }
-}
-
-/**
- * التحقق من مجموعة من المدخلات
- * @param array $inputs
- * @param array $validationRules
- * @return array|false
- */
-function validateMultiple($inputs, $validationRules) {
-    $validated = [];
-    $errors = [];
-    
-    foreach ($validationRules as $field => $rules) {
-        $value = $inputs[$field] ?? null;
-        
-        // Check if required
-        if (($rules['required'] ?? false) && empty($value)) {
-            $errors[$field] = $rules['error_message'] ?? "الحقل {$field} مطلوب";
-            continue;
-        }
-        
-        // Skip validation if not required and empty
-        if (empty($value) && !($rules['required'] ?? false)) {
-            $validated[$field] = null;
-            continue;
-        }
-        
-        // Validate based on type
-        $validated[$field] = validateInput(
-            $value,
-            $rules['type'] ?? 'string',
-            $rules['options'] ?? []
-        );
-        
-        if ($validated[$field] === false) {
-            $errors[$field] = $rules['error_message'] ?? "القيمة المدخلة غير صحيحة للحقل {$field}";
-        }
-    }
-    
-    return empty($errors) ? $validated : false;
-}
-
-// ========== XSS Protection ==========
-
-/**
- * تنظيف HTML مع السماح بعلامات محدودة
- * @param string $html
- * @return string
- */
-function sanitizeHTML($html) {
-    $allowed = '<p><br><strong><b><em><i><u><h1><h2><h3><h4><h5><h6><ul><ol><li><a><table><tr><td><th><div><span>';
-    return strip_tags($html, $allowed);
-}
-
-/**
- * تنظيف النص من الأحرف الخطرة
- * @param string $text
- * @return string
- */
-function sanitizeText($text) {
-    return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
-}
-
-/**
- * الحصول على البيانات من GET/POST مع الحماية
- * @param string $key
- * @param string $type
- * @param mixed $default
- * @return mixed
- */
-function getSafeInput($key, $type = 'string', $default = null) {
-    $value = $_POST[$key] ?? $_GET[$key] ?? $default;
-    
-    if ($value === null || $value === $default) {
-        return $default;
-    }
-    
-    return validateInput($value, $type);
-}
-
-// ========== Rate Limiting ==========
-
-const RATE_LIMIT_KEY_PREFIX = 'ratelimit_';
-const RATE_LIMIT_MAX_ATTEMPTS = 5;
-const RATE_LIMIT_WINDOW = 300; // 5 دقائق
-
-/**
- * التحقق من حد الطلبات
- * @param string $identifier
- * @param int $maxAttempts
- * @param int $window
- * @return bool
- */
-function checkRateLimit($identifier, $maxAttempts = RATE_LIMIT_MAX_ATTEMPTS, $window = RATE_LIMIT_WINDOW) {
-    $key = RATE_LIMIT_KEY_PREFIX . $identifier;
-    
-    if (!isset($_SESSION[$key])) {
-        $_SESSION[$key] = [
-            'attempts' => 0,
-            'first_attempt' => time()
-        ];
-    }
-    
-    $rateData = $_SESSION[$key];
-    $elapsed = time() - $rateData['first_attempt'];
-    
-    // إعادة تعيين إذا انتهت فترة الانتظار
-    if ($elapsed > $window) {
-        $_SESSION[$key] = [
-            'attempts' => 1,
-            'first_attempt' => time()
-        ];
-        return true;
-    }
-    
-    // التحقق من عدد المحاولات
-    if ($rateData['attempts'] >= $maxAttempts) {
-        return false;
-    }
-    
-    // زيادة عدد المحاولات
-    $_SESSION[$key]['attempts']++;
     return true;
 }
 
 /**
- * إعادة تعيين حد الطلبات
- * @param string $identifier
+ * التحقق من CSRF وإنهاء الطلب إذا فشل
  */
-function resetRateLimit($identifier) {
-    $key = RATE_LIMIT_KEY_PREFIX . $identifier;
+function requireCSRFToken() {
+    if (!verifyCSRFToken()) {
+        die('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="text-align:center;padding:50px;"><h2>⚠️ فشل التحقق الأمني</h2><p>الرجاء تحديث الصفحة والمحاولة مرة أخرى.</p><button onclick="history.back()">العودة</button></body></html>');
+    }
+}
+
+// =============================================
+// 2. XSS Protection (غير مستخدمة - محذوفة لتجنب التكرار)
+// الدوال escape, escapeWithBreaks, escapeAttr موجودة في functions.php
+// =============================================
+
+// =============================================
+// 3. Input Validation (التحقق من صحة المدخلات)
+// =============================================
+
+/**
+ * التحقق من صحة البريد الإلكتروني
+ * @param string $email البريد الإلكتروني
+ * @return bool صحة البريد
+ */
+function validateEmail($email) {
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+/**
+ * التحقق من صحة الرقم (عدد صحيح أو عشري)
+ * @param mixed $number الرقم
+ * @return bool هل هو رقم صحيح
+ */
+function validateNumber($number) {
+    return is_numeric($number);
+}
+
+/**
+ * ❌ تمت إزالة دالة validateDate() - موجودة في functions.php
+ */
+
+/**
+ * التحقق من أن القيمة موجبة
+ * @param float $value القيمة
+ * @return bool هل هي موجبة
+ */
+function validatePositive($value) {
+    return is_numeric($value) && $value > 0;
+}
+
+/**
+ * ❌ تمت إزالة دالة sanitizeInput() - موجودة في functions.php
+ */
+
+// =============================================
+// 4. Rate Limiting (تحديد عدد المحاولات)
+// =============================================
+
+/**
+ * فحص حد المحاولات لعنوان IP معين
+ * @param string $action نوع العملية (login, api, etc)
+ * @param int $limit الحد الأقصى للمحاولات
+ * @param int $window الفترة الزمنية بالثواني
+ * @return bool هل تم تجاوز الحد
+ */
+function isRateLimited($action = 'default', $limit = 5, $window = 300) {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $key = "rate_limit_{$action}_{$ip}";
+    
+    if (!isset($_SESSION[$key])) {
+        $_SESSION[$key] = ['count' => 1, 'first_attempt' => time()];
+        return false;
+    }
+    
+    $data = $_SESSION[$key];
+    if (time() - $data['first_attempt'] > $window) {
+        $_SESSION[$key] = ['count' => 1, 'first_attempt' => time()];
+        return false;
+    }
+    
+    if ($data['count'] >= $limit) {
+        return true;
+    }
+    
+    $_SESSION[$key]['count']++;
+    return false;
+}
+
+/**
+ * إعادة تعيين عدد المحاولات
+ * @param string $action نوع العملية
+ */
+function resetRateLimit($action = 'default') {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $key = "rate_limit_{$action}_{$ip}";
     unset($_SESSION[$key]);
 }
 
-/**
- * الحصول على عدد محاولات حد الطلبات المتبقية
- * @param string $identifier
- * @return int
- */
-function getRateLimitRemaining($identifier) {
-    $key = RATE_LIMIT_KEY_PREFIX . $identifier;
-    
-    if (!isset($_SESSION[$key])) {
-        return RATE_LIMIT_MAX_ATTEMPTS;
-    }
-    
-    $rateData = $_SESSION[$key];
-    $elapsed = time() - $rateData['first_attempt'];
-    
-    if ($elapsed > RATE_LIMIT_WINDOW) {
-        return RATE_LIMIT_MAX_ATTEMPTS;
-    }
-    
-    return max(0, RATE_LIMIT_MAX_ATTEMPTS - $rateData['attempts']);
-}
-
-// ========== Prepared Statements Helper ==========
+// =============================================
+// 5. Session Security (أمان الجلسات)
+// =============================================
 
 /**
- * تنفيذ استعلام مع معالجة الأخطاء
- * @param PDO $pdo
- * @param string $sql
- * @param array $params
- * @return PDOStatement|false
- */
-function executeSafeQuery($pdo, $sql, $params = []) {
-    try {
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        return $stmt;
-    } catch (PDOException $e) {
-        error_log("Database Error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// ========== Session Security ==========
-
-/**
- * تحديث معرف الجلسة (منع Session Fixation)
+ * تجديد معرف الجلسة (بعد تسجيل الدخول)
  */
 function regenerateSession() {
     session_regenerate_id(true);
-    // الحفاظ على CSRF token
-    if (isset($_SESSION['csrf_token'])) {
-        $csrf = $_SESSION['csrf_token'];
-        session_regenerate_id(true);
-        $_SESSION['csrf_token'] = $csrf;
-    }
 }
 
 /**
- * تعيين خصائص أمان الجلسة
+ * التحقق من صحة الجلسة (IP, User Agent)
+ * @return bool هل الجلسة صالحة
  */
-function setSessionSecurityHeaders() {
-    // منع الوصول للـ cookie من JavaScript
-    ini_set('session.cookie_httponly', '1');
-    
-    // نقل الـ cookie فقط عبر HTTPS (اختياري - حسب البيئة)
-    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
-        ini_set('session.cookie_secure', '1');
+function validateSession() {
+    if (!isset($_SESSION['user_id'])) {
+        return false;
     }
     
-    // تعيين SameSite attribute
-    ini_set('session.cookie_samesite', 'Strict');
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    
+    if (isset($_SESSION['ip_address']) && $_SESSION['ip_address'] !== $ip) {
+        error_log("Session IP mismatch for user {$_SESSION['user_id']}");
+        return false;
+    }
+    
+    if (isset($_SESSION['user_agent']) && $_SESSION['user_agent'] !== $ua) {
+        error_log("Session User Agent mismatch for user {$_SESSION['user_id']}");
+        return false;
+    }
+    
+    return true;
 }
 
-// ========== Logging & Audit Trail ==========
+/**
+ * تعيين بيانات الجلسة عند تسجيل الدخول
+ * @param int $user_id معرف المستخدم
+ * @param string $username اسم المستخدم
+ */
+function setSessionData($user_id, $username) {
+    $_SESSION['user_id'] = $user_id;
+    $_SESSION['username'] = $username;
+    $_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR'] ?? '';
+    $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $_SESSION['login_time'] = time();
+    regenerateSession();
+}
 
 /**
- * تسجيل العمليات الحساسة
- * @param string $action
- * @param string $entity
- * @param int $entityId
- * @param string $details
- * @param int $userId
+ * تدمير الجلسة وتسجيل الخروج
  */
-function logSecurityAction($action, $entity, $entityId, $details = '', $userId = null) {
-    global $pdo;
-    
-    if ($userId === null) {
-        $userId = $_SESSION['user_id'] ?? null;
+function destroySession() {
+    $_SESSION = array();
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
     }
+    session_destroy();
+}
+
+// =============================================
+// 6. Password Security (أمان كلمات المرور)
+// =============================================
+
+/**
+ * تشفير كلمة المرور باستخدام Argon2id
+ * @param string $password كلمة المرور
+ * @return string التشفير
+ */
+function hashPassword($password) {
+    return password_hash($password, PASSWORD_ARGON2ID, [
+        'memory_cost' => 65536,
+        'time_cost' => 4,
+        'threads' => 3
+    ]);
+}
+
+/**
+ * التحقق من كلمة المرور
+ * @param string $password كلمة المرور المدخلة
+ * @param string $hash التشفير المخزن
+ * @return bool صحة كلمة المرور
+ */
+function verifyPassword($password, $hash) {
+    return password_verify($password, $hash);
+}
+
+/**
+ * فحص قوة كلمة المرور
+ * @param string $password كلمة المرور
+ * @return array النتيجة (score من 0-4، ورسالة)
+ */
+function checkPasswordStrength($password) {
+    $score = 0;
+    $messages = [];
+    
+    if (strlen($password) < 8) {
+        $messages[] = 'كلمة المرور قصيرة جداً (8 أحرف على الأقل)';
+    } else {
+        $score++;
+    }
+    
+    if (preg_match('/[A-Z]/', $password)) $score++;
+    if (preg_match('/[a-z]/', $password)) $score++;
+    if (preg_match('/[0-9]/', $password)) $score++;
+    if (preg_match('/[^A-Za-z0-9]/', $password)) $score++;
+    
+    if ($score >= 4) {
+        $messages[] = 'قوية جداً';
+    } elseif ($score >= 3) {
+        $messages[] = 'قوية';
+    } elseif ($score >= 2) {
+        $messages[] = 'متوسطة';
+    } else {
+        $messages[] = 'ضعيفة';
+    }
+    
+    return ['score' => $score, 'message' => implode(', ', $messages)];
+}
+
+// =============================================
+// 7. Audit Log (تسجيل العمليات الأمنية)
+// =============================================
+
+/**
+ * تسجيل عملية في سجل التدقيق
+ * @param PDO $pdo اتصال قاعدة البيانات
+ * @param string $action نوع العملية
+ * @param string|null $details تفاصيل إضافية
+ */
+function auditLog($pdo, $action, $details = null) {
+    $user_id = $_SESSION['user_id'] ?? null;
+    $username = $_SESSION['username'] ?? 'guest';
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
     
     try {
         $stmt = $pdo->prepare("
-            INSERT INTO security_audit_log (user_id, action, entity, entity_id, details, ip_address, user_agent, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO audit_log (user_id, username, action, details, ip_address, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
         ");
-        
-        $stmt->execute([
-            $userId,
-            $action,
-            $entity,
-            $entityId,
-            $details,
-            $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN',
-            $_SERVER['HTTP_USER_AGENT'] ?? 'UNKNOWN'
-        ]);
-    } catch (PDOException $e) {
-        error_log("Audit Log Error: " . $e->getMessage());
+        $stmt->execute([$user_id, $username, $action, $details, $ip, $user_agent]);
+    } catch (Exception $e) {
+        error_log("Audit log failed: " . $e->getMessage());
     }
 }
 
-// ========== Password Security ==========
+// =============================================
+// 8. Security Headers (رؤوس الأمان)
+// =============================================
 
 /**
- * التحقق من قوة كلمة المرور
- * @param string $password
- * @return array
+ * إرسال رؤوس الأمان للمتصفح
  */
-function checkPasswordStrength($password) {
-    $strength = 0;
-    $feedback = [];
-    
-    if (strlen($password) >= 8) $strength++;
-    else $feedback[] = "يجب أن تكون كلمة المرور 8 أحرف على الأقل";
-    
-    if (preg_match('/[a-z]/', $password)) $strength++;
-    else $feedback[] = "أضف حروفاً صغيرة";
-    
-    if (preg_match('/[A-Z]/', $password)) $strength++;
-    else $feedback[] = "أضف حروفاً كبيرة";
-    
-    if (preg_match('/[0-9]/', $password)) $strength++;
-    else $feedback[] = "أضف أرقاماً";
-    
-    if (preg_match('/[!@#$%^&*]/', $password)) $strength++;
-    else $feedback[] = "أضف رموزاً خاصة (!@#$%^&*)";
-    
-    return [
-        'strength' => $strength,
-        'level' => $strength <= 1 ? 'ضعيفة' : ($strength <= 2 ? 'متوسطة' : ($strength <= 3 ? 'جيدة' : 'قوية جداً')),
-        'feedback' => $feedback
-    ];
+function sendSecurityHeaders() {
+    header("X-Frame-Options: DENY");
+    header("X-Content-Type-Options: nosniff");
+    header("X-XSS-Protection: 1; mode=block");
+    header("Referrer-Policy: strict-origin-when-cross-origin");
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; font-src 'self' https://cdnjs.cloudflare.com;");
 }
-
-/**
- * توليد كلمة مرور قوية
- * @param int $length
- * @return string
- */
-function generateStrongPassword($length = 12) {
-    $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    $lowercase = 'abcdefghijklmnopqrstuvwxyz';
-    $numbers = '0123456789';
-    $symbols = '!@#$%^&*';
-    
-    $all = $uppercase . $lowercase . $numbers . $symbols;
-    $password = '';
-    
-    // تأكد من وجود أنواع مختلفة من الأحرف
-    $password .= $uppercase[random_int(0, strlen($uppercase) - 1)];
-    $password .= $lowercase[random_int(0, strlen($lowercase) - 1)];
-    $password .= $numbers[random_int(0, strlen($numbers) - 1)];
-    $password .= $symbols[random_int(0, strlen($symbols) - 1)];
-    
-    // ملء الباقي عشوائياً
-    for ($i = 4; $i < $length; $i++) {
-        $password .= $all[random_int(0, strlen($all) - 1)];
-    }
-    
-    // خلط الأحرف
-    $password = str_shuffle($password);
-    
-    return $password;
-}
-
-// ========== Initialize Security ==========
-setSessionSecurityHeaders();
 ?>

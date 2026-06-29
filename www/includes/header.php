@@ -1,544 +1,898 @@
+<?php
+// =============================================
+// إضافة الأمان عند بدء الصفحة
+// =============================================
+require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/functions.php';
+
+// إرسال رؤوس الأمان
+sendSecurityHeaders();
+
+// التحقق من صحة الجلسة إذا كان المستخدم مسجلاً دخولاً
+if (isset($_SESSION['user_id']) && !validateSession()) {
+    destroySession();
+    header("Location: /login.php");
+    exit;
+}
+?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>نظام إدارة الاقتطاعات</title>
     
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/deductions_system/manifest.json">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="../assets/fontawesome/css/all.min.css">    
+    <!-- Toastr CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     
-    <!-- Font Awesome 6 (استخدم 5.15.4 كما في الكود الأصلي) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">    
+    <!-- Google Font - Cairo (مناسب للغة العربية) -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
     
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- jQuery (مطلوب لـ Toastr) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     
     <style>
-        /* ========== RESET & GLOBAL ========== */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* =========================================================
+           MODERN ADMIN UI - PROFESSIONAL GREEN EDITION
+           تصميم احترافي هادئ ومتوازن
+        ========================================================= */
+
+        /* ========== ROOT COLORS ========== */
+        :root{
+            --primary:#1E5A4A;
+            --primary-light:#2E7D64;
+            --primary-soft:#4E9B84;
+            --primary-dark:#0F3D32;
+
+            --background:#F4F7F6;
+            --surface:#FFFFFF;
+
+            --text:#18352A;
+            --text-light:#5F746B;
+
+            --border:#DDE7E2;
+
+            --hover:#F0F6F3;
+
+            --shadow-sm:0 2px 6px rgba(0,0,0,0.04);
+            --shadow-md:0 6px 18px rgba(0,0,0,0.08);
+            --shadow-lg:0 10px 28px rgba(0,0,0,0.10);
+
+            --radius:16px;
+            --radius-sm:12px;
+
+            --transition:all .25s ease;
         }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f0f2f5;
-            color: #2c3e50;
-            transition: background 0.3s, color 0.2s;
+        /* ========== RESET ========== */
+        *{
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
         }
 
-        /* ========== SIDEBAR ========== */
-        .sidebar {
-            width: 280px;
-            background: linear-gradient(180deg, #99c0ac, #071a10);
-            color: white;
-            position: fixed;
-            top: 0;
-            right: 0;
-            height: 100vh;
-            overflow-y: auto;
-            z-index: 100;
-            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
-            transition: width 0.3s ease;
+        html{
+            scroll-behavior:smooth;
         }
 
-        .sidebar-header {
-            text-align: center;
-            padding: 25px 20px;
-            border-bottom: 1px solid rgba(44, 181, 19, 0.1);
+        body{
+            font-family:'Cairo',sans-serif;
+            background:var(--background);
+            color:var(--text);
+            min-height:100vh;
+            line-height:1.7;
+            overflow-x:hidden;
         }
 
-        .sidebar-header h2 {
-            font-size: 22px;
-            font-weight: bold;
-            white-space: nowrap;
-            overflow: hidden;
+        /* =========================================================
+           SIDEBAR
+        ========================================================= */
+
+        .sidebar{
+            position:fixed;
+            top:0;
+            right:0;
+            width:280px;
+            height:100vh;
+
+            background:linear-gradient(
+                180deg,
+                #1A4D3F 0%,
+                #1E5A4A 45%,
+                #2A715D 100%
+            );
+
+            color:#fff;
+            z-index:1000;
+            overflow-y:auto;
+            transition:var(--transition);
+            box-shadow:-6px 0 25px rgba(0,0,0,0.08);
         }
 
-        .sidebar-header p {
-            font-size: 12px;
-            opacity: 0.6;
-            white-space: nowrap;
+        /* Scrollbar */
+        .sidebar::-webkit-scrollbar{
+            width:5px;
+        }
+        .sidebar::-webkit-scrollbar-track{
+            background:rgba(255,255,255,0.08);
+            border-radius:10px;
+        }
+        .sidebar::-webkit-scrollbar-thumb{
+            background:rgba(255,255,255,0.25);
+            border-radius:10px;
+        }
+        .sidebar::-webkit-scrollbar-thumb:hover{
+            background:rgba(255,255,255,0.35);
         }
 
-        .nav-menu {
-            list-style: none;
-            padding: 15px 0;
+        .sidebar-header{
+            padding:26px 20px;
+            text-align:center;
+            border-bottom:1px solid rgba(255,255,255,0.08);
         }
 
-        .nav-item {
-            margin: 5px 15px;
+        .sidebar-header h2{
+            font-size:17px;
+            font-weight:800;
+            margin-bottom:6px;
+            line-height:1.6;
+            letter-spacing:-0.3px;
         }
 
-        .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 18px;
-            color: #e8f5e9;
-            text-decoration: none;
-            border-radius: 14px;
-            transition: all 0.3s ease;
-            font-size: 14px;
-            white-space: nowrap;
+        .sidebar-header h3{
+            font-size:13px;
+            font-weight:600;
+            color:#D7F1E7;
+            margin-bottom:12px;
         }
 
-        .nav-link i {
-            width: 24px;
-            text-align: center;
-            font-size: 18px;
+        .sidebar-header p{
+            font-size:12px;
+            opacity:.8;
         }
 
-        .nav-link:hover {
-            background: rgba(255,255,255,0.12);
-            transform: translateX(-5px);
+        /* =========================================================
+           NAVIGATION
+        ========================================================= */
+
+        .nav-menu{
+            list-style:none;
+            padding:18px 14px;
         }
 
-        /* Sidebar collapsed */
-        .sidebar.collapsed {
-            width: 70px;
+        .nav-item{
+            margin-bottom:10px;
         }
+
+        .nav-dropdown-btn{
+            width:100%;
+            border:none;
+            outline:none;
+            background:rgba(255,255,255,0.06);
+            color:#fff;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            padding:14px 16px;
+            border-radius:14px;
+            cursor:pointer;
+            transition:var(--transition);
+            font-family:'Cairo',sans-serif;
+            font-size:14px;
+            font-weight:700;
+        }
+
+        .nav-dropdown-btn:hover{
+            background:rgba(255,255,255,0.12);
+            transform:translateX(-3px);
+        }
+
+        /* تحسين: الزر النشط بشفافية خفيفة بدلاً من الأبيض المبهر */
+        .nav-dropdown-btn.active{
+            background:rgba(255,255,255,0.15);
+            color:#D7F1E7;
+            border:1px solid rgba(255,255,255,0.2);
+            box-shadow:var(--shadow-sm);
+        }
+
+        .nav-dropdown-btn .icon{
+            margin-left:10px;
+            font-size:16px;
+        }
+
+        .nav-dropdown-btn .arrow{
+            transition:transform .25s ease;
+        }
+
+        .nav-dropdown-btn.active .arrow{
+            transform:rotate(180deg);
+        }
+
+        /* =========================================================
+           DROPDOWN CONTENT
+        ========================================================= */
+
+        .nav-dropdown-content{
+            max-height:0;
+            overflow:hidden;
+            transition:max-height .35s ease;
+            margin-top:6px;
+            padding-right:8px;
+        }
+
+        .nav-dropdown-content.show{
+            max-height:500px;
+        }
+
+        .nav-link{
+            display:flex;
+            align-items:center;
+            gap:10px;
+            text-decoration:none;
+            color:#EAF5F0;
+            padding:11px 14px;
+            margin:6px 0;
+            border-radius:12px;
+            font-size:13px;
+            font-weight:600;
+            transition:var(--transition);
+        }
+
+        .nav-link:hover{
+            background:rgba(255,255,255,0.12);
+            color:#fff;
+            transform:translateX(-3px);
+        }
+
+        .nav-link.active{
+            background:#fff;
+            color:var(--primary);
+            box-shadow:var(--shadow-sm);
+        }
+
+        .nav-link i{
+            width:18px;
+            text-align:center;
+        }
+
+        /* =========================================================
+           SIDEBAR COLLAPSED - مع تحسين الحركة
+        ========================================================= */
+
+        .sidebar.collapsed{
+            width:78px;
+        }
+
         .sidebar.collapsed .sidebar-header h2,
+        .sidebar.collapsed .sidebar-header h3,
         .sidebar.collapsed .sidebar-header p,
-        .sidebar.collapsed .nav-link span {
-            display: none;
-        }
-        .sidebar.collapsed .nav-link {
-            justify-content: center;
-            padding: 12px 0;
-        }
-        .sidebar.collapsed .nav-link i {
-            margin: 0;
+        .sidebar.collapsed .nav-dropdown-btn span,
+        .sidebar.collapsed .arrow,
+        .sidebar.collapsed .nav-dropdown-content{
+            display:none;
         }
 
-        /* ========== MAIN CONTENT ========== */
-        .main-content {
-            margin-right: 280px;
-            padding: 20px;
-            min-height: 100vh;
-            transition: margin-right 0.3s ease;
-        }
-        .main-content.expanded {
-            margin-right: 70px;
+        .sidebar.collapsed .nav-item{
+            display:flex;
+            justify-content:center;
         }
 
-        /* ========== TOP BAR ========== */
-        .top-bar {
-            background: white;
-            border-radius: 20px;
-            padding: 15px 25px;
-            margin-bottom: 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            border-right: 4px solid #2e7d32;
-            flex-wrap: wrap;
-            gap: 10px;
+        .sidebar.collapsed .nav-dropdown-btn{
+            width:50px;
+            height:50px;
+            padding:0;
+            justify-content:center;
+            transition:all 0.2s ease;
         }
 
-        .page-title {
-            font-size: 22px;
-            font-weight: 700;
-            color: #1a3a2a;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .sidebar.collapsed .icon{
+            margin:0;
+            font-size:18px;
         }
 
-        .date-badge {
-            background: #e8f5e9;
-            padding: 8px 18px;
-            border-radius: 25px;
-            font-size: 13px;
-            color: #1b5e20;
+        /* =========================================================
+           MAIN CONTENT
+        ========================================================= */
+
+        .main-content{
+            margin-right:280px;
+            padding:24px;
+            transition:var(--transition);
         }
 
-        /* ========== CARDS & STATS ========== */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+        .main-content.expanded{
+            margin-right:78px;
         }
 
-        .stat-card {
-            background: white;
-            border-radius: 20px;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            transition: all 0.3s ease;
-            border-bottom: 3px solid;
+        /* =========================================================
+           TOP BAR
+        ========================================================= */
+
+        .top-bar{
+            background:var(--surface);
+            border-radius:18px;
+            padding:18px 24px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:25px;
+            box-shadow:var(--shadow-md);
+            border:1px solid var(--border);
         }
 
-        .stat-card:hover {
-            transform: translateY(-5px);
+        .page-title{
+            display:flex;
+            align-items:center;
+            gap:12px;
+            font-size:24px;
+            font-weight:800;
+            color:var(--primary);
         }
 
-        .stat-card h3 {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 10px;
+        .page-title i{
+            width:50px;
+            height:50px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            border-radius:14px;
+            background:linear-gradient(135deg, var(--primary), var(--primary-light));
+            color:#fff;
+            font-size:22px;
         }
 
-        .stat-card .number {
-            font-size: 28px;
-            font-weight: 700;
+        .top-actions{
+            display:flex;
+            align-items:center;
+            gap:12px;
         }
 
-        /* ========== SECTIONS & TABLES ========== */
-        .section {
-            background: white;
-            border-radius: 20px;
-            padding: 20px;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        .date-badge{
+            background:var(--hover);
+            padding:10px 18px;
+            border-radius:12px;
+            font-size:13px;
+            font-weight:700;
+            color:var(--primary);
+            border:1px solid var(--border);
         }
 
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #e8f5e9;
+        /* =========================================================
+           BUTTONS - تحسين حجم الخط للهواتف
+        ========================================================= */
+
+        .toggle-sidebar,
+        .dark-mode-toggle{
+            width:44px;
+            height:44px;
+            border:none;
+            outline:none;
+            border-radius:12px;
+            background:var(--hover);
+            color:var(--primary);
+            cursor:pointer;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:18px;
+            transition:var(--transition);
+            border:1px solid var(--border);
         }
 
-        .section-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: #1b5e20;
+        .toggle-sidebar:hover,
+        .dark-mode-toggle:hover{
+            background:var(--primary);
+            color:#fff;
+            transform:translateY(-2px);
         }
 
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 16px;
-            overflow: hidden;
-        }
-        .data-table th, .data-table td {
-            padding: 12px;
-            text-align: center;
-            border-bottom: 1px solid #ddd;
-        }
-        .data-table th {
-            background: #2a5298;
-            color: white;
-        }
-        .data-table tr:hover {
-            background: #f5f5f5;
+        /* =========================================================
+           CARDS
+        ========================================================= */
+
+        .card{
+            background:#fff;
+            border-radius:18px;
+            padding:22px;
+            box-shadow:var(--shadow-sm);
+            border:1px solid var(--border);
+            transition:var(--transition);
         }
 
-        /* ========== FORMS ========== */
-        .form-container {
-            max-width: 600px;
-            margin: 30px auto;
-            background: white;
-            padding: 25px;
-            border-radius: 20px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 8px;
-        }
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 12px;
-        }
-        button, .btn {
-            background: #2a5298;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 30px;
-            cursor: pointer;
-            font-weight: bold;
-            text-decoration: none;
-            display: inline-block;
-        }
-        button:hover, .btn:hover {
-            background: #1e3c72;
+        .card:hover{
+            transform:translateY(-3px);
+            box-shadow:var(--shadow-md);
         }
 
-        /* ========== BUTTONS & UTILITIES ========== */
-        .btn-sm {
-            background: #2a5298;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            text-decoration: none;
-            display: inline-block;
-            transition: 0.3s;
-            border: none;
-            cursor: pointer;
-        }
-        .btn-sm:hover {
-            background: #1e3c72;
+        /* =========================================================
+           TABLES
+        ========================================================= */
+
+        table{
+            width:100%;
+            border-collapse:collapse;
         }
 
-        .toggle-sidebar, .dark-mode-toggle {
-            background: none;
-            border: green;
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-            margin-left: 10px;
-            transition: 0.2s;
-        }
-        .dark-mode-toggle {
-            color: #ffc107;
+        table th{
+            background:#F6FAF8;
+            color:var(--primary);
+            font-weight:800;
+            padding:14px;
+            border-bottom:1px solid var(--border);
         }
 
-        /* ========== DARK MODE ========== */
-        body.dark-mode {
-            background: #121212;
-            color: #e0e0e0;
-        }
-        body.dark-mode .sidebar {
-            background: linear-gradient(180deg, #1e1e1e, #0a0a0a);
-        }
-        body.dark-mode .top-bar,
-        body.dark-mode .stat-card,
-        body.dark-mode .section,
-        body.dark-mode .data-table,
-        body.dark-mode .form-container {
-            background: #1e1e1e;
-            color: #ddd;
-        }
-        body.dark-mode .data-table,
-        body.dark-mode .grants-table,
-        body.dark-mode .loans-table,
-        body.dark-mode table {
-            background-color: #1e1e1e;
-            color: #e0e0e0;
-        }
-        body.dark-mode .data-table th,
-        body.dark-mode .grants-table th,
-        body.dark-mode .loans-table th,
-        body.dark-mode table th {
-            background-color: #2a2a2a;
-            color: #ffffff;
-            border-color: #444;
-        }
-        body.dark-mode .data-table td,
-        body.dark-mode .grants-table td,
-        body.dark-mode .loans-table td,
-        body.dark-mode table td {
-            background-color: #252525;
-            color: #e0e0e0;
-            border-color: #3a3a3a;
-        }
-        body.dark-mode .data-table tr:hover td,
-        body.dark-mode .grants-table tr:hover td,
-        body.dark-mode .loans-table tr:hover td,
-        body.dark-mode table tr:hover td {
-            background-color: #2e2e2e;
-        }
-        body.dark-mode .total-row td,
-        body.dark-mode .total-row th {
-            background-color: #3a3a3a !important;
-            color: #ffd700 !important;
-        }
-        body.dark-mode .info-box {
-            background-color: #1e2a3a;
-            color: #e0e0e0;
-            border-right-color: #4caf50;
-        }
-        body.dark-mode .section-title {
-            color: #ffd700;
-            border-right-color: #ffd700;
-        }
-        body.dark-mode .btn-sm {
-            background: #333;
-        }
-        body.dark-mode .date-badge {
-            background: #2c2c2c;
-            color: #ccc;
-        }
-        body.dark-mode .data-table th {
-            background: #333;
-        }
-        body.dark-mode .data-table tr:hover {
-            background: #2a2a2a;
+        table td{
+            padding:14px;
+            border-bottom:1px solid #EEF3F1;
+            font-size:14px;
         }
 
-        /* ========== RESPONSIVE ========== */
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(100%);
-                position: fixed;
-                z-index: 1000;
+        table tr:hover{
+            background:#FAFCFB;
+        }
+
+        /* =========================================================
+           FORM ELEMENTS
+        ========================================================= */
+
+        input,
+        select,
+        textarea{
+            width:100%;
+            padding:12px 14px;
+            border-radius:12px;
+            border:1px solid var(--border);
+            background:#fff;
+            font-family:'Cairo',sans-serif;
+            transition:var(--transition);
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus{
+            border-color:var(--primary-light);
+            outline:none;
+            box-shadow:0 0 0 4px rgba(46,125,100,0.12);
+        }
+
+        /* =========================================================
+           BUTTONS STYLE
+        ========================================================= */
+
+        .btn{
+            border:none;
+            padding:12px 18px;
+            border-radius:12px;
+            cursor:pointer;
+            font-family:'Cairo',sans-serif;
+            font-weight:700;
+            transition:var(--transition);
+        }
+
+        .btn-primary{
+            background:linear-gradient(135deg, var(--primary), var(--primary-light));
+            color:#fff;
+        }
+
+        .btn-primary:hover{
+            transform:translateY(-2px);
+            box-shadow:var(--shadow-md);
+        }
+
+        /* =========================================================
+           TOASTR
+        ========================================================= */
+
+        .toast{
+            border-radius:14px !important;
+            box-shadow:var(--shadow-lg) !important;
+            font-family:'Cairo',sans-serif !important;
+        }
+
+        .toast-success{
+            background:#1E5A4A !important;
+        }
+        .toast-error{
+            background:#C0392B !important;
+        }
+        .toast-warning{
+            background:#D68910 !important;
+        }
+        .toast-info{
+            background:#2471A3 !important;
+        }
+
+        /* =========================================================
+   DARK MODE - تحسين التباين والوضوح
+========================================================= */
+
+body.dark-mode{
+    --background:#0F1714;
+    --surface:#1A2A24;      /* أفتح قليلاً من السابق */
+    --text:#F0F7F4;         /* أبيض مائل للأخضر الفاتح */
+    --text-light:#C5DDD4;   /* رمادي فاتح للوضوح */
+    --border:#2A423A;       /* حدود أفتح قليلاً */
+    --hover:#243A32;
+}
+
+body.dark-mode .sidebar{
+    background:linear-gradient(180deg, #0F2A22, #14362C, #1A4538);
+}
+
+body.dark-mode .top-bar,
+body.dark-mode .card,
+body.dark-mode .stat-card,
+body.dark-mode .filters,
+body.dark-mode .form-container,
+body.dark-mode .data-table{
+    background:var(--surface);
+    color:var(--text);
+}
+
+/* تحسين الجداول في الوضع الليلي */
+body.dark-mode .data-table th{
+    background:#1E3A32;
+    color:#E0F0EB;
+    font-weight:700;
+}
+
+body.dark-mode .data-table td{
+    color:var(--text);
+    border-bottom-color:var(--border);
+}
+
+body.dark-mode .data-table tr:hover{
+    background:var(--hover);
+}
+
+/* تحسين حقول الإدخال */
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea{
+    background:#0F1F1A;
+    color:#F0F7F4;
+    border-color:var(--border);
+}
+
+body.dark-mode input::placeholder,
+body.dark-mode select::placeholder,
+body.dark-mode textarea::placeholder{
+    color:#8AAFA3;
+}
+
+body.dark-mode input:focus,
+body.dark-mode select:focus,
+body.dark-mode textarea:focus{
+    border-color:var(--primary-light);
+    box-shadow:0 0 0 3px rgba(46,125,100,0.2);
+}
+
+/* تحسين البطاقات الإحصائية */
+body.dark-mode .stat-card{
+    background:var(--surface);
+    border-bottom-color:var(--primary-light);
+}
+
+body.dark-mode .stat-card .number{
+    color:#E0F0EB;
+    font-weight:800;
+}
+
+body.dark-mode .stat-card .label{
+    color:#B7CCC3;
+}
+
+/* تحسين الأزرار */
+body.dark-mode .btn-edit,
+body.dark-mode .btn-delete,
+body.dark-mode .btn-add,
+body.dark-mode .btn-sm{
+    opacity:0.9;
+}
+
+body.dark-mode .btn-edit:hover,
+body.dark-mode .btn-delete:hover,
+body.dark-mode .btn-add:hover{
+    opacity:1;
+}
+
+/* تحسين مربع البحث والفلاتر */
+body.dark-mode .filters select,
+body.dark-mode .filters input{
+    background:#0F1F1A;
+    color:#F0F7F4;
+}
+
+/* تحسين رسائل Toast في الوضع الليلي */
+body.dark-mode .toast-success{
+    background:#1E5A4A !important;
+    color:#fff !important;
+}
+body.dark-mode .toast-error{
+    background:#A93226 !important;
+    color:#fff !important;
+}
+body.dark-mode .toast-warning{
+    background:#B9770E !important;
+    color:#fff !important;
+}
+body.dark-mode .toast-info{
+    background:#1A5276 !important;
+    color:#fff !important;
+}
+
+/* تحسين الروابط في القائمة الجانبية */
+body.dark-mode .nav-link{
+    color:#D7F1E7;
+}
+
+body.dark-mode .nav-link:hover{
+    color:#FFFFFF;
+    background:rgba(255,255,255,0.12);
+}
+
+body.dark-mode .nav-link.active{
+    background:#2E7D64;
+    color:#FFFFFF;
+}
+
+/* تحسين العدادات والباجات */
+body.dark-mode .status-badge{
+    font-weight:600;
+}
+
+body.dark-mode .status-active{
+    background:#1B5E4A;
+    color:#E0F0EB;
+}
+
+body.dark-mode .status-expiring{
+    background:#7D6608;
+    color:#FFF3CD;
+}
+
+body.dark-mode .status-expired{
+    background:#7B241C;
+    color:#F5B7B1;
+}
+        /* =========================================================
+           MOBILE RESPONSIVE - تحسين الخطوط للأجهزة الصغيرة
+        ========================================================= */
+
+        @media(max-width:992px){
+            .sidebar{
+                transform:translateX(100%);
             }
-            .sidebar.open-mobile {
-                transform: translateX(0);
+            .sidebar.open-mobile{
+                transform:translateX(0);
             }
-            .main-content {
-                margin-right: 0;
+            .main-content{
+                margin-right:0;
+                padding:18px;
             }
-            .top-bar {
-                flex-direction: column;
-                align-items: flex-start;
+            .top-bar{
+                flex-direction:column;
+                align-items:flex-start;
+                gap:15px;
             }
-        }
-        .toggle-sidebar {
-            background: #849285;
-            color: white;
-            border: none;
-            font-size: 24px;
-            width: 40px;
-            height: 40px;
-            border-radius: 8px;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .toggle-sidebar:hover {
-            background: #1b5e20;
+            .page-title{
+                font-size:20px;
+            }
         }
 
-        /* ========== TOAST NOTIFICATIONS STYLES ========== */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 9999;
-            direction: rtl;
+        @media(max-width:768px){
+            .nav-dropdown-btn{
+                font-size:13px;
+                padding:12px 12px;
+            }
         }
-        .toast {
-            background: white;
-            border-radius: 12px;
-            padding: 12px 20px;
-            margin-bottom: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            min-width: 250px;
-            max-width: 350px;
-            border-right: 5px solid;
-            animation: slideIn 0.3s ease, fadeOut 0.5s ease 2.5s forwards;
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-        }
-        .toast.success { border-right-color: #28a745; background: #e8f5e9; }
-        .toast.error { border-right-color: #dc3545; background: #ffebee; }
-        .toast.warning { border-right-color: #ffc107; background: #fff3e0; }
-        .toast.info { border-right-color: #17a2b8; background: #e1f5fe; }
-        .toast i { font-size: 20px; }
-        .toast .message { flex: 1; font-size: 14px; }
-        .toast .close { cursor: pointer; font-weight: bold; font-size: 18px; color: #888; }
-        @keyframes slideIn {
-            from { transform: translateX(-100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes fadeOut {
-            to { opacity: 0; visibility: hidden; }
+
+        @media(max-width:576px){
+            .top-bar{
+                padding:16px;
+            }
+            .page-title{
+                font-size:18px;
+            }
+            .page-title i{
+                width:42px;
+                height:42px;
+                font-size:18px;
+            }
+            .date-badge{
+                width:100%;
+                text-align:center;
+            }
         }
     </style>
 </head>
-
 <body>
 
-<!-- ========== TOAST NOTIFICATIONS CONTAINER ========== -->
-<div class="toast-container" id="toastContainer"></div>
+<!-- Toast Container -->
+<div id="toast-container" style="position: fixed; top: 20px; left: 20px; z-index: 9999;"></div>
 
 <?php
-// =============================================
-// عرض إشعارات الـ Toast (المنبثقة) من الجلسة
-// =============================================
+// عرض رسائل toast المخزنة في الجلسة باستخدام Toastr
 if (isset($_SESSION['toast'])) {
     $toast = $_SESSION['toast'];
     echo "<script>
-        document.addEventListener('DOMContentLoaded', function() {
-            showToast('{$toast['message']}', '{$toast['type']}', {$toast['duration']});
+        $(document).ready(function() {
+            toastr.options = {
+                'closeButton': true,
+                'progressBar': true,
+                'positionClass': 'toast-top-left',
+                'timeOut': " . ($toast['duration'] ?? 3000) . ",
+                'rtl': true
+            };
+            toastr.{$toast['type']}('" . addslashes($toast['message']) . "');
         });
     </script>";
     unset($_SESSION['toast']);
 }
-
-// =============================================
-// عرض إشعارات الاقتطاعات المنتهية / القريبة
-// =============================================
-if (file_exists(__DIR__ . '/notification.php')) {
-    require_once __DIR__ . '/notification.php';
-    // تأكد من وجود متغير $pdo (الاتصال بقاعدة البيانات)
-    if (!isset($pdo) && file_exists(__DIR__ . '/../config/database.php')) {
-        require_once __DIR__ . '/../config/database.php';
-    }
-    if (isset($pdo)) {
-        echo showNotifications($pdo, '/deductions_system');
-    }
-}
 ?>
 
-<!-- ========== SIDEBAR ========== -->
+<!-- ========== SIDEBAR (الشريط الجانبي الأخضر الاحترافي) ========== -->
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
-        <img src="/deductions_system/assets/images/logo.png" alt="شعار المركز" style="width: 200px; margin-bottom: 5px;">
-        <h2 style="font-size: 16px; margin: 5px 0;">مركز التكوين والتعليم المهنيين</h2>
-        <h3 style="font-size: 14px; margin: 0; color: #ffd700;">الشهيد علي بوسحابة - بكوينين</h3>
-        <hr style="margin: 10px 0; border-color: rgba(255,255,255,0.2);">
-        <h2 style="font-size: 20px; margin-top: 5px;">لجنة الخدمات الاجتماعية</h2>
-        <p style="font-size: 15px;color: #a3ddf4;">إنجاز شـوقي نيـد</p>
+        <h2>مركز التكوين والتعليم المهنيين</h2>
+        <h3>الشهيد علي بوسحابة - بكوينين</h3>
+        <hr style="margin: 10px 0; border-color: rgba(255,255,255,0.1);">
+        <h2>لجنة الخدمات الاجتماعية</h2>
+        <p>إنجاز شـوقي نيـد</p>
     </div>
+    
     <ul class="nav-menu">
-        <!-- الروابط الأساسية -->
-        <li class="nav-item"><a href="/index.php" class="nav-link"><span>📊</span> <span>لوحة التحكم</span></a></li>
-        <li class="nav-item"><a href="/employees/list.php" class="nav-link"><span>👥</span> <span>الموظفون</span></a></li>
-        <li class="nav-item"><a href="/employees/add.php" class="nav-link"><span>➕</span> <span>إضافة موظف</span></a></li>
-        <li class="nav-item"><a href="/sources/list.php" class="nav-link"><span>🗄️</span> <span>المصادر</span></a></li>
-        <li class="nav-item"><a href="/deductions/list.php" class="nav-link"><span>📈</span> <span>الاقتطاعات</span></a></li>
-        <li class="nav-item"><a href="/deductions/add.php" class="nav-link"><span>➕</span> <span>إضافة اقتطاع</span></a></li>
-        <li class="nav-item"><a href="/grants/list.php" class="nav-link"><span>🎁</span> <span>المنح الاجتماعية</span></a></li>
-        <li class="nav-item"><a href="/grants/assign.php" class="nav-link"><span>🤲</span> <span>منح موظف</span></a></li>
-        <li class="nav-item"><a href="/grants/employee_list.php" class="nav-link"><span>📋</span> <span>منح الموظفين</span></a></li>
-        
-        <!-- نظام الوجبات -->
-        <li class="nav-item"><a href="/meals/index.php" class="nav-link"><span>🍽️</span> <span>تسجيل وجبات المطعم</span></a></li>
-        <li class="nav-item"><a href="/meals/reports.php" class="nav-link"><span>📊</span> <span>تقارير وجبات المطعم</span></a></li>
-        <li class="nav-item"><a href="/meals/process_trimester.php" class="nav-link"><span>🔄</span> <span>تأكيد الاقتطاع الثلاثي</span></a></li>
-        
-        <!-- الميزانية -->
-        <li class="nav-item"><a href="/budget/dashboard.php" class="nav-link"><span>🏛️</span> <span>الميزانية</span></a></li>
-        <li class="nav-item"><a href="/budget/dashboard.php" class="nav-link"><span>🥧</span> <span>لوحة الميزانية</span></a></li>
-        <li class="nav-item"><a href="/budget/simulation.php" class="nav-link"><span>📈</span> <span>محاكاة الميزانية</span></a></li>
-        <li class="nav-item"><a href="/budget/create.php" class="nav-link"><span>➕</span> <span>إضافة ميزانية</span></a></li>
-        <li class="nav-item"><a href="/budget/report.php" class="nav-link"><span>📄</span> <span>تقرير الميزانية</span></a></li>
-        
-        <!-- التقارير -->
-        <li class="nav-item"><a href="/reports/monthly.php" class="nav-link"><span>📅</span> <span>التقرير الشهري</span></a></li>
-        <li class="nav-item"><a href="/reports/meeting_minutes.php" class="nav-link"><span>📝</span> <span>تحرير المحضر الشهري</span></a></li>
-        <li class="nav-item"><a href="/reports/quarterly.php" class="nav-link"><span>📅</span> <span>التقرير الثلاثي</span></a></li>
-        <li class="nav-item"><a href="/reports/annual.php" class="nav-link"><span>📊</span> <span>التقرير السنوي</span></a></li>
-        
-        <!-- المدفوعات -->
-        <li class="nav-item"><a href="/payments/list.php" class="nav-link"><span>💵</span> <span>المبالغ المسلمة</span></a></li>
-        <li class="nav-item"><a href="/payments/report.php" class="nav-link"><span>📈</span> <span>تقرير الشيكات</span></a></li>
-        <li class="nav-item"><a href="/payments/reconcile.php" class="nav-link"><span>🔍</span> <span>مطابقة الشيكات</span></a></li>
-        
-        <!-- أدوات النظام -->
-        <li class="nav-item"><a href="/backup.php" class="nav-link"><span>💾</span> <span>النسخ الاحتياطي</span></a></li>
-        <li class="nav-item"><a href="/regulations.php" class="nav-link"><span>📘</span> <span>القوانين الداخلية</span></a></li>
-        <li class="nav-item"><a href="/settings.php" class="nav-link"><span>⚙️</span> <span>إعدادات النظام</span></a></li>
-        
-        <!-- تسجيل العمرة وعيد العمال -->
-        <li class="nav-item"><a href="/umrah/draw_list.php" class="nav-link"><span>🕋</span> <span>سحب العمرة</span></a></li> 
-        <li class="nav-item"><a href="/honors/index.php" class="nav-link"><span>🎖️</span> <span>عيد العمال</span></a></li>
-        
-        <!-- تسجيل الخروج -->
-        <li class="nav-item"><a href="/logout.php" class="nav-link"><span>🚪</span> <span>تسجيل خروج</span></a></li>
+        <!-- ========== الرئيسية ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-tachometer-alt icon"></i> الرئيسية</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/index.php" class="nav-link"><i class="fas fa-home"></i> لوحة التحكم</a>
+            </div>
+        </li>
+
+        <!-- ========== الموارد البشرية ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-users icon"></i> الموارد البشرية</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/employees/list.php" class="nav-link"><i class="fas fa-list"></i> قائمة الموظفين</a>
+                <a href="/employees/add.php" class="nav-link"><i class="fas fa-user-plus"></i> إضافة موظف</a>
+            </div>
+        </li>
+
+        <!-- ========== المالية ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-chart-line icon"></i> المالية</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/sources/list.php" class="nav-link"><i class="fas fa-database"></i> المصادر</a>
+                <a href="/deductions/list.php" class="nav-link"><i class="fas fa-hand-holding-usd"></i> الاقتطاعات</a>
+                <a href="/deductions/add.php" class="nav-link"><i class="fas fa-plus-circle"></i> إضافة اقتطاع</a>
+                <a href="/grants/list.php" class="nav-link"><i class="fas fa-gift"></i> المنح الاجتماعية</a>
+                <a href="/grants/assign.php" class="nav-link"><i class="fas fa-user-check"></i> منح موظف</a>
+                <a href="/grants/employee_list.php" class="nav-link"><i class="fas fa-clipboard-list"></i> منح الموظفين</a>
+                <!-- ... الروابط الحالية ... -->
+                <a href="/payments/list.php" class="nav-link"><i class="fas fa-list"></i> قائمة الشيكات</a>
+                <a href="/payments/add.php" class="nav-link"><i class="fas fa-plus-circle"></i> إضافة شيك</a>
+                <a href="/payments/reconcile.php" class="nav-link"><i class="fas fa-balance-scale"></i> مطابقة الشيكات</a>
+                <a href="/payments/report.php" class="nav-link"><i class="fas fa-chart-line"></i> تقرير الشيكات</a>
+            </div>
+            <!-- داخل قسم المالية -->
+            
+        </li>
+
+        <!-- ========== الميزانية ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-wallet icon"></i> الميزانية</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/budget/dashboard.php" class="nav-link"><i class="fas fa-chart-pie"></i> لوحة الميزانية</a>
+                <a href="/budget/simulation.php" class="nav-link"><i class="fas fa-chart-line"></i> محاكاة الميزانية</a>
+                <a href="/budget/create.php" class="nav-link"><i class="fas fa-plus-circle"></i> إضافة ميزانية</a>
+                <a href="/budget/report.php" class="nav-link"><i class="fas fa-file-alt"></i> تقرير الميزانية</a>
+            </div>
+        </li>
+
+        <!-- ========== التقارير ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-chart-bar icon"></i> التقارير</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/reports/monthly.php" class="nav-link"><i class="fas fa-calendar-alt"></i> التقرير الشهري</a>
+                <a href="/reports/monthly_comparison.php" class="nav-link"><i class="fas fa-chart-bar"></i> مقارنة الأشهر</a>
+                <a href="/reports/meeting_minutes.php" class="nav-link"><i class="fas fa-file-signature"></i> تحرير المحضر الشهري</a>
+                <a href="/reports/quarterly.php" class="nav-link"><i class="fas fa-chart-line"></i> التقرير الثلاثي</a>
+                <a href="/reports/annual.php" class="nav-link"><i class="fas fa-chart-line"></i> التقرير السنوي</a>
+            </div>
+        </li>
+
+        <!-- ========== الخدمات الاجتماعية ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-hand-holding-heart icon"></i> الخدمات الاجتماعية</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/umrah/draw_list.php" class="nav-link"><i class="fas fa-mosque"></i> سحب العمرة</a>
+                <a href="/honors/index.php" class="nav-link"><i class="fas fa-trophy"></i> عيد العمال</a>
+            </div>
+        </li>
+
+<!-- وجبات المطعم (النظام الجديد) -->
+<li class="nav-item">
+    <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+        <span><i class="fas fa-utensils icon"></i> وجبات المطعم</span>
+        <i class="fas fa-chevron-down arrow"></i>
+    </button>
+    <div class="nav-dropdown-content">
+        <a href="/meals/dashboard.php" class="nav-link"><i class="fas fa-tachometer-alt"></i> لوحة الوجبات</a>
+        <a href="/meals/import_monthly.php" class="nav-link"><i class="fas fa-file-import"></i> استيراد المستفيدين</a>
+        <a href="/meals/report.php" class="nav-link"><i class="fas fa-chart-line"></i> تقرير منح الوجبات</a>
+        <a href="/meals/employee_report.php" class="nav-link"><i class="fas fa-user-chart"></i> سجل منح الموظف</a>
+        <a href="/meals/generate_grant.php?month=<?= date('m') ?>&year=<?= date('Y') ?>" class="nav-link" onclick="return confirm('⚠️ توليد منح الوجبات لهذا الشهر؟')">
+            <i class="fas fa-gift"></i> توليد منحة الوجبات
+        </a>
+    </div>
+</li>
+
+<!-- التصدير -->
+<li class="nav-item">
+    <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+        <span><i class="fas fa-file-export icon"></i> التصدير</span>
+        <i class="fas fa-chevron-down arrow"></i>
+    </button>
+    <div class="nav-dropdown-content">
+        <a href="/meals/export_manager.php" class="nav-link"><i class="fas fa-cog"></i> إدارة التصدير</a>
+        <a href="/meals/export_manager.php" class="nav-link"><i class="fas fa-users"></i> تصدير قائمة الموظفين</a>
+        <a href="/meals/export_manager.php" class="nav-link"><i class="fas fa-utensils"></i> تصدير المستفيدين</a>
+        <a href="/meals/export_manager.php" class="nav-link"><i class="fas fa-chart-line"></i> تصدير تقرير شهري</a>
+    </div>
+</li>
+
+        <!-- النظام -->
+<li class="nav-item">
+    <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+        <span><i class="fas fa-cog icon"></i> النظام</span>
+        <i class="fas fa-chevron-down arrow"></i>
+    </button>
+    <div class="nav-dropdown-content">
+        <a href="/regulations.php" class="nav-link"><i class="fas fa-book"></i> القوانين الداخلية</a>
+        <a href="/backup.php" class="nav-link"><i class="fas fa-database"></i> النسخ الاحتياطي</a>
+        <a href="/system_info.php" class="nav-link"><i class="fas fa-info-circle"></i> معلومات النظام</a>
+        <a href="/database_optimize.php" class="nav-link"><i class="fas fa-wrench"></i> تحسين قاعدة البيانات</a>
+        <a href="/settings.php" class="nav-link"><i class="fas fa-sliders-h"></i> إعدادات النظام</a>
+        <!-- سجل التدقيق -->
+        <a href="/audit_log.php" class="nav-link">    <i class="fas fa-history"></i> 📜 سجل التدقيق</a>
+        <!-- محرك القواعد -->
+        <a href="/rules_engine.php" class="nav-link">    <i class="fas fa-cogs"></i> ⚙️ محرك القواعد</a>
+    </div>
+</li>
+
+        <!-- ========== الخروج ========== -->
+        <li class="nav-item">
+            <button class="nav-dropdown-btn" onclick="toggleDropdown(this)">
+                <span><i class="fas fa-sign-out-alt icon"></i> حسابي</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="nav-dropdown-content">
+                <a href="/logout.php" class="nav-link"><i class="fas fa-door-open"></i> تسجيل خروج</a>
+            </div>
+        </li>
     </ul>
 </aside>
 
@@ -549,77 +903,68 @@ if (file_exists(__DIR__ . '/notification.php')) {
             <button class="toggle-sidebar" id="toggleSidebarBtn" title="تصغير/توسيع القائمة">☰</button>
             <i class="fas fa-tachometer-alt"></i> لجنة الخدمات الاجتماعية - نظام الاقتطاعات
         </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="top-actions">
             <button class="dark-mode-toggle" id="darkModeToggle" title="الوضع الليلي">🌙</button>
             <div class="date-badge"><i class="far fa-calendar-alt"></i> <?= date('d F Y') ?></div>
         </div>
     </div>
 
 <script>
-    (function() {
-        // ========== طي/توسيع القائمة الجانبية ==========
-        const sidebar = document.getElementById('sidebar');
-        const mainContent = document.getElementById('mainContent');
-        const toggleBtn = document.getElementById('toggleSidebarBtn');
+    // ========== تبويبات القوائم المنسدلة ==========
+    function toggleDropdown(btn) {
+        btn.classList.toggle('active');
+        const content = btn.nextElementSibling;
+        content.classList.toggle('show');
+    }
 
-        if (sidebar && mainContent && toggleBtn) {
-            const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-            if (isCollapsed) {
-                sidebar.classList.add('collapsed');
-                mainContent.classList.add('expanded');
+    // فتح القائمة النشطة حسب الصفحة الحالية
+    const currentUrl = window.location.pathname;
+    document.querySelectorAll('.nav-dropdown-content .nav-link').forEach(link => {
+        if (link.getAttribute('href') === currentUrl) {
+            const parentBtn = link.closest('.nav-item').querySelector('.nav-dropdown-btn');
+            if (parentBtn) {
+                parentBtn.classList.add('active');
+                parentBtn.nextElementSibling.classList.add('show');
             }
-            toggleBtn.addEventListener('click', function() {
-                sidebar.classList.toggle('collapsed');
-                mainContent.classList.toggle('expanded');
-                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            });
+            link.classList.add('active');
         }
+    });
 
-        // ========== الوضع الليلي (Dark Mode) ==========
-        const darkToggle = document.getElementById('darkModeToggle');
-        if (darkToggle) {
-            // تحديث الأيقونة بناءً على الحالة الحالية
-            function updateDarkModeIcon() {
-                const isDark = document.body.classList.contains('dark-mode');
-                darkToggle.innerHTML = isDark ? '☀️' : '🌙';
-            }
+    // ========== طي القائمة الجانبية ==========
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('mainContent');
+    const toggleBtn = document.getElementById('toggleSidebarBtn');
 
-            // استرجاع الوضع المخزن
-            if (localStorage.getItem('darkMode') === 'true') {
-                document.body.classList.add('dark-mode');
-            } else {
-                document.body.classList.remove('dark-mode');
-            }
-            updateDarkModeIcon();
-
-            // عند الضغط على الزر
-            darkToggle.addEventListener('click', () => {
-                document.body.classList.toggle('dark-mode');
-                const isDark = document.body.classList.contains('dark-mode');
-                localStorage.setItem('darkMode', isDark);
-                updateDarkModeIcon();
-            });
+    if (sidebar && mainContent && toggleBtn) {
+        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        if (isCollapsed) {
+            sidebar.classList.add('collapsed');
+            mainContent.classList.add('expanded');
         }
-    })();
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        });
+    }
 
-    // ========== TOAST NOTIFICATION FUNCTION ==========
-    function showToast(message, type = 'info', duration = 3000) {
-        const container = document.getElementById('toastContainer');
-        if (!container) return;
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        let icon = '';
-        if (type === 'success') icon = '✅';
-        else if (type === 'error') icon = '❌';
-        else if (type === 'warning') icon = '⚠️';
-        else icon = 'ℹ️';
-        toast.innerHTML = `
-            <i>${icon}</i>
-            <div class="message">${message}</div>
-            <div class="close">&times;</div>
-        `;
-        container.appendChild(toast);
-        toast.querySelector('.close').onclick = () => toast.remove();
-        setTimeout(() => toast.remove(), duration);
+    // ========== دعم الشاشات الصغيرة ==========
+    if (window.innerWidth <= 992) {
+        sidebar.classList.add('open-mobile');
+    }
+
+    // ========== الوضع الليلي ==========
+    const darkToggle = document.getElementById('darkModeToggle');
+    if (darkToggle) {
+        const isDark = localStorage.getItem('darkMode') === 'true';
+        if (isDark) document.body.classList.add('dark-mode');
+        darkToggle.innerHTML = isDark ? '☀️' : '🌙';
+        
+        darkToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            const dark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('darkMode', dark);
+            darkToggle.innerHTML = dark ? '☀️' : '🌙';
+        });
     }
 </script>

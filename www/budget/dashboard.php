@@ -1,196 +1,180 @@
 <?php
 session_start();
 require_once '../includes/auth_check.php';
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
-    exit;
-}
 require_once '../config/database.php';
+require_once '../includes/security.php';
 require_once '../includes/functions.php';
-include '../includes/header.php';
 
-// التأكد من وجود $pdo
-global $pdo;
+// الحصول على السنة المحددة (افتراضي 2026)
+$year = isset($_GET['year']) ? (int)$_GET['year'] : date('Y');
 
-// إنشاء السنة القادمة تلقائيًا إذا لزم الأمر (تم التعليق مؤقتًا للتأكد)
-// autoCreateNextYearBudget();
+// محاولة الحصول على الميزانية الإجمالية من جدول social_budget
+// نبحث عن حقل total_budget أو total_amount، أو نستخدم remaining_budget + المصروفات
+$initial_budget = 0;
 
-// جلب الميزانية الحالية
-$budget = $pdo->query("SELECT * FROM social_budget ORDER BY year DESC LIMIT 1")->fetch();
-$remaining = $budget ? $budget['remaining_budget'] : 0;
-$initial = $budget ? $budget['initial_budget'] : 0;
-
-// إجمالي المصروفات (حيث is_deduct = 1) في السنة الحالية - معدل لـ SQLite
-$totalDeduct = $pdo->query("
-    SELECT COALESCE(SUM(amount),0) 
-    FROM budget_transactions 
-    WHERE is_deduct = 1 
-    AND strftime('%Y', transaction_date) = strftime('%Y', 'now')
-")->fetchColumn();
-$spent = $totalDeduct;
-$spentPercent = $initial ? round(($spent / $initial) * 100, 1) : 0;
-$year = date('Y');
-
-// إشعار تلقائي عند انخفاض الميزانية عن 100,000 دج
-if ($remaining < 100000) {
-    // نتحقق إذا كان هذا الإشعار قد أضيف بالفعل اليوم (لتجنب التكرار)
-    $today = date('Y-m-d');
-    $stmt = $pdo->prepare("
-        SELECT id FROM notifications 
-        WHERE user_id = ? AND type = 'warning' 
-        AND date(created_at) = date(?) 
-        AND message LIKE '%الميزانية%'
-    ");
-    $stmt->execute([$_SESSION['user_id'], $today]);
-    $exists = $stmt->fetch();
-    if (!$exists) {
-        addNotification($_SESSION['user_id'], "⚠️ الميزانية أقل من 100,000 دج! (المتبقي: " . number_format($remaining, 2) . " دج)", "warning", "budget/index.php");
-    }
+// 1. هل يوجد عمود total_budget؟ جرب قراءة هيكل الجدول
+$columns = $pdo->query("PRAGMA table_info(social_budget)")->fetchAll(PDO::FETCH_COLUMN, 1);
+if (in_array('total_budget', $columns)) {
+    $stmt = $pdo->prepare("SELECT total_budget FROM social_budget WHERE year = ? ORDER BY year DESC LIMIT 1");
+    $stmt->execute([$year]);
+    $row = $stmt->fetch();
+    if ($row) $initial_budget = (float)$row['total_budget'];
 }
 
-// إحصائيات السنة الحالية (معدلة لـ SQLite)
-$totalGrants = $pdo->query("
-    SELECT COALESCE(SUM(amount),0) 
-    FROM budget_transactions 
-    WHERE type='grant' 
-    AND strftime('%Y', transaction_date) = strftime('%Y', 'now')
-")->fetchColumn();
+// 2. إذا لم يجد، حاول الحصول على المبلغ الأولي من حقل initial_budget إن وجد
+if ($initial_budget == 0 && in_array('initial_budget', $columns)) {
+    $stmt = $pdo->prepare("SELECT initial_budget FROM social_budget WHERE year = ? ORDER BY year DESC LIMIT 1");
+    $stmt->execute([$year]);
+    $row = $stmt->fetch();
+    if ($row) $initial_budget = (float)$row['initial_budget'];
+}
 
-$totalLoans = $pdo->query("
-    SELECT COALESCE(SUM(amount),0) 
-    FROM budget_transactions 
-    WHERE type='loan' 
-    AND strftime('%Y', transaction_date) = strftime('%Y', 'now')
-")->fetchColumn();
+// 3. إذا لم يجد، نحسب الميزانية الإجمالية = (إجمالي المصروفات - إجمالي الاسترجاعات) + الرصيد المتبقي الحالي
+if ($initial_budget == 0) {
+    // جلب آخر رصيد متبقي (remaining_budget) من جدول social_budget
+    $stmt = $pdo->prepare("SELECT remaining_budget FROM social_budget ORDER BY year DESC LIMIT 1");
+    $stmt->execute();
+    $last = $stmt->fetch();
+    $current_remaining = $last ? (float)$last['remaining_budget'] : 0;
+    
+    // حساب إجمالي المصروفات (السلف + المنح) لهذه السنة
+    $stmt_exp = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions WHERE is_deduct = 1 AND strftime('%Y', transaction_date) = ?");
+    $stmt_exp->execute([$year]);
+    $total_expenses_year = (float)$stmt_exp->fetchColumn();
+    
+    // حساب إجمالي الاسترجاعات (is_deduct = 0) لهذه السنة
+    $stmt_ref = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions WHERE is_deduct = 0 AND strftime('%Y', transaction_date) = ?");
+    $stmt_ref->execute([$year]);
+    $total_refunds_year = (float)$stmt_ref->fetchColumn();
+    
+    // الميزانية الإجمالية = الرصيد المتبقي + المصروفات - الاسترجاعات
+    $initial_budget = $current_remaining + $total_expenses_year - $total_refunds_year;
+    
+    // إذا كانت النتيجة صفر أو سالبة، استخدم قيمة افتراضية
+    if ($initial_budget <= 0) $initial_budget = 1000000; // 1,000,000 دج افتراضياً
+}
 
-$totalInstallments = $pdo->query("
-    SELECT COALESCE(SUM(amount),0) 
-    FROM budget_transactions 
-    WHERE type='installment' 
-    AND strftime('%Y', transaction_date) = strftime('%Y', 'now')
-")->fetchColumn();
+// استعلامات دقيقة للإحصائيات (كما في السابق)
+$stmt_loans = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions WHERE type = 'loan' AND is_deduct = 1 AND strftime('%Y', transaction_date) = ?");
+$stmt_loans->execute([$year]);
+$total_loans = (float) $stmt_loans->fetchColumn();
 
-// آخر 5 عمليات
-$transactions = $pdo->query("SELECT * FROM budget_transactions ORDER BY transaction_date DESC LIMIT 5")->fetchAll();
+$stmt_grants = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions WHERE type = 'grant' AND is_deduct = 1 AND description NOT LIKE '%استرجاع%' AND strftime('%Y', transaction_date) = ?");
+$stmt_grants->execute([$year]);
+$total_grants = (float) $stmt_grants->fetchColumn();
 
-// تفاصيل الأقساط المردودة (معدلة لـ SQLite)
-$installmentsDetails = $pdo->query("
-    SELECT 
-        d.id,
-        d.monthly_amount,
-        d.total_months,
-        d.start_date,
-        d.end_date,
-        e.name as employee_name,
-        COALESCE(SUM(CASE WHEN bt.type = 'installment' AND strftime('%Y', bt.transaction_date) = strftime('%Y', 'now') THEN bt.amount ELSE 0 END), 0) as paid_amount,
-        COALESCE(SUM(CASE WHEN bt.type = 'installment' AND strftime('%Y', bt.transaction_date) = strftime('%Y', 'now') THEN 1 ELSE 0 END), 0) as paid_months
-    FROM deductions d
-    JOIN employees e ON d.employee_id = e.id
-    LEFT JOIN budget_transactions bt ON bt.reference_id = d.id AND bt.type = 'installment'
-    WHERE d.is_loan = 1 
-      AND strftime('%Y', d.start_date) <= strftime('%Y', 'now') 
-      AND strftime('%Y', d.end_date) >= strftime('%Y', 'now')
-    GROUP BY d.id
-    ORDER BY e.name ASC, d.start_date ASC
-")->fetchAll();
+$stmt_refunds = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM budget_transactions WHERE is_deduct = 0 AND description LIKE '%استرجاع%' AND strftime('%Y', transaction_date) = ?");
+$stmt_refunds->execute([$year]);
+$total_refunds = (float) $stmt_refunds->fetchColumn();
+
+$total_expenses = $total_loans + $total_grants;
+$remaining_budget = $initial_budget - $total_expenses + $total_refunds;
+
+// نسبة الاستهلاك
+$percentage_used = ($initial_budget > 0) ? min(100, round(($total_expenses / $initial_budget) * 100, 1)) : 0;
+
+// آخر 10 عمليات
+$transactions_sql = "SELECT transaction_date, amount, type, description, is_deduct FROM budget_transactions WHERE strftime('%Y', transaction_date) = ? ORDER BY transaction_date DESC LIMIT 10";
+$stmt_trans = $pdo->prepare($transactions_sql);
+$stmt_trans->execute([$year]);
+$recent_transactions = $stmt_trans->fetchAll();
+
+include '../includes/header.php';
 ?>
 
 <style>
-    .dashboard { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 30px; }
-    .card { flex: 1; background: white; padding: 20px; border-radius: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-    .card .value { font-size: 28px; font-weight: bold; }
-    .progress-bar { background: #e9ecef; border-radius: 30px; height: 20px; margin: 15px 0; overflow: hidden; }
-    .progress-fill { background: #28a745; width: 0%; height: 100%; border-radius: 30px; }
-    .progress-fill.warning { background: #dc3545; }
-    table { width: 100%; border-collapse: collapse; background: white; margin-top: 20px; border-radius: 16px; overflow: hidden; }
-    th, td { padding: 12px; text-align: center; border-bottom: 1px solid #ddd; }
-    th { background: #2a5298; color: white; }
-    .badge-grant { background: #dc3545; color: white; padding: 4px 12px; border-radius: 20px; display: inline-block; }
-    .badge-loan { background: #fd7e14; color: white; padding: 4px 12px; border-radius: 20px; display: inline-block; }
-    .badge-installment { background: #28a745; color: white; padding: 4px 12px; border-radius: 20px; display: inline-block; }
-    .btn { display: inline-block; padding: 8px 16px; background: #2a5298; color: white; border-radius: 20px; text-decoration: none; margin-top: 15px; }
+    /* نفس الأنماط السابقة - احتفظ بها كما هي */
+    .dashboard-container { max-width: 1200px; margin: 0 auto; }
+    .stats-grid { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
+    .stat-card { background: white; border-radius: 20px; padding: 20px; text-align: center; flex: 1; min-width: 180px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-bottom: 4px solid; transition: transform 0.2s; }
+    .stat-card:hover { transform: translateY(-5px); }
+    .stat-card.loans { border-bottom-color: #2a5298; }
+    .stat-card.grants { border-bottom-color: #28a745; }
+    .stat-card.refunds { border-bottom-color: #ffc107; }
+    .stat-card.expenses { border-bottom-color: #dc3545; }
+    .stat-card.remaining { border-bottom-color: #17a2b8; }
+    .stat-card .number { font-size: 28px; font-weight: 700; margin: 10px 0; }
+    .stat-card .label { font-size: 14px; color: #666; }
+    .progress-section { background: white; border-radius: 20px; padding: 20px; margin-bottom: 30px; }
+    .progress-bar-container { background: #e9ecef; border-radius: 30px; height: 25px; overflow: hidden; }
+    .progress-bar { background: linear-gradient(90deg, #2a5298, #28a745); width: <?= $percentage_used ?>%; height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-size: 12px; font-weight: bold; border-radius: 30px; }
+    .transactions-table { width: 100%; border-collapse: collapse; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .transactions-table th, .transactions-table td { padding: 12px 15px; text-align: center; border-bottom: 1px solid #ddd; }
+    .transactions-table th { background: #2a5298; color: white; }
+    .badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; display: inline-block; }
+    .badge-loan { background: #2a5298; color: white; }
+    .badge-grant { background: #28a745; color: white; }
+    .badge-refund { background: #ffc107; color: #333; }
 </style>
 
-<h2>📊 لوحة تحكم الميزانية - سنة <?= $year ?></h2>
-
-<div class="dashboard">
-    <div class="card">
-        <h3>💰 الميزانية المتبقية</h3>
-        <div class="value"><?= number_format($remaining, 2) ?> دج</div>
-    </div>
-    <div class="card">
-        <h3>📉 إجمالي الصرف</h3>
-        <div class="value"><?= number_format($spent, 2) ?> دج</div>
-        <div class="progress-bar">
-            <div class="progress-fill <?= $spentPercent > 80 ? 'warning' : '' ?>" style="width: <?= $spentPercent ?>%;"></div>
+<div class="dashboard-container">
+    <h2 style="margin-bottom: 20px;">📊 لوحة تحكم الميزانية - سنة <?= $year ?></h2>
+    
+    <div class="stats-grid">
+        <div class="stat-card loans">
+            <div class="label">💰 السلف</div>
+            <div class="number"><?= number_format($total_loans, 2) ?> دج</div>
         </div>
-        <div><?= $spentPercent ?>% من الميزانية</div>
+        <div class="stat-card grants">
+            <div class="label">🎁 المنح الفعلية</div>
+            <div class="number"><?= number_format($total_grants, 2) ?> دج</div>
+        </div>
+        <div class="stat-card refunds">
+            <div class="label">🔄 استرجاعات السلف</div>
+            <div class="number"><?= number_format($total_refunds, 2) ?> دج</div>
+        </div>
+        <div class="stat-card expenses">
+            <div class="label">💸 إجمالي الصرف</div>
+            <div class="number"><?= number_format($total_expenses, 2) ?> دج</div>
+        </div>
+        <div class="stat-card remaining">
+            <div class="label">✅ الميزانية المتبقية</div>
+            <div class="number"><?= number_format($remaining_budget, 2) ?> دج</div>
+        </div>
     </div>
-    <div class="card">
-        <h3>🎁 المنح</h3>
-        <div class="value"><?= number_format($totalGrants, 2) ?> دج</div>
+
+    <div class="progress-section">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>الميزانية المستخدمة</span>
+            <span><?= $percentage_used ?>%</span>
+        </div>
+        <div class="progress-bar-container">
+            <div class="progress-bar" style="width: <?= $percentage_used ?>%;"><?= $percentage_used ?>%</div>
+        </div>
+        <div style="margin-top: 10px; color: #666; font-size: 14px;">
+            الميزانية الإجمالية المقدرة: <?= number_format($initial_budget, 2) ?> دج
+        </div>
     </div>
-    <div class="card">
-        <h3>💰 السلف</h3>
-        <div class="value"><?= number_format($totalLoans, 2) ?> دج</div>
-    </div>
-    <div class="card">
-        <h3>🔄 الأقساط المردودة</h3>
-        <div class="value"><?= number_format($totalInstallments, 2) ?> دج</div>
-    </div>
+
+    <h3 style="margin: 25px 0 15px;">🕒 آخر العمليات</h3>
+    <table class="transactions-table">
+        <thead>
+            <tr><th>التاريخ</th><th>المبلغ (دج)</th><th>النوع</th><th>الوصف</th><th>اتجاه</th></tr>
+        </thead>
+        <tbody>
+            <?php if (empty($recent_transactions)): ?>
+                <tr><td colspan="5" style="text-align:center;">لا توجد معاملات</td></tr>
+            <?php else: ?>
+                <?php foreach ($recent_transactions as $tr): 
+                    $type_label = '';
+                    if ($tr['type'] == 'loan') $type_label = '<span class="badge badge-loan">سلفة</span>';
+                    else if ($tr['type'] == 'grant') {
+                        if (strpos($tr['description'], 'استرجاع') !== false) $type_label = '<span class="badge badge-refund">استرجاع سلفة</span>';
+                        else $type_label = '<span class="badge badge-grant">منحة</span>';
+                    } else $type_label = '<span class="badge badge-loan">أخرى</span>';
+                    $direction = $tr['is_deduct'] ? '🔻 صرف' : '🔺 إضافة';
+                ?>
+                <tr>
+                    <td><?= date('d/m/Y H:i', strtotime($tr['transaction_date'])) ?></td>
+                    <td><?= number_format($tr['amount'], 2) ?></td>
+                    <td><?= $type_label ?></td>
+                    <td><?= escape($tr['description']) ?></td>
+                    <td><?= $direction ?></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
 </div>
-
-<h3>📋 آخر العمليات</h3>
-<table>
-    <thead>
-        <tr><th>التاريخ</th><th>النوع</th><th>الوصف</th><th>المبلغ</th></tr>
-    </thead>
-    <tbody>
-        <?php foreach($transactions as $t): 
-            $typeClass = $t['type'] == 'grant' ? 'badge-grant' : ($t['type'] == 'loan' ? 'badge-loan' : 'badge-installment');
-            $typeName = $t['type'] == 'grant' ? 'منحة' : ($t['type'] == 'loan' ? 'سلفة' : 'قسط مردود');
-        ?>
-        <tr>
-            <td><?= date('d/m/Y H:i', strtotime($t['transaction_date'])) ?></span></small></td>
-            <td><span class="<?= $typeClass ?>"><?= $typeName ?></span></span></small></td>
-            <td><?= htmlspecialchars($t['description']) ?> </span></small></td>
-            <td><?= number_format($t['amount'], 2) ?> دج</span></small></td>
-        </tr>
-        <?php endforeach; ?>
-    </tbody>
-</table>
-
-<h3>📊 تفاصيل الأقساط المردودة</h3>
-<table>
-    <thead>
-        <tr>
-            <th>الموظف</th>
-            <th>المبلغ الشهري</th>
-            <th>إجمالي الأقساط</th>
-            <th>الأقساط المردودة</th>
-            <th>المتبقي</th>
-            <th>تاريخ البداية</th>
-            <th>تاريخ النهاية</th>
-         </tr>
-    </thead>
-    <tbody>
-        <?php foreach($installmentsDetails as $row): 
-            $remainingMonths = $row['total_months'] - $row['paid_months'];
-            $remainingAmount = $remainingMonths * $row['monthly_amount'];
-        ?>
-        <tr>
-            <td><?= htmlspecialchars($row['employee_name']) ?> </span></small></td>
-            <td><?= number_format($row['monthly_amount'], 2) ?> دج</span></small></td>
-            <td><?= $row['total_months'] ?> قسط</span></small></td>
-            <td><?= $row['paid_months'] ?> قسط</span></small></td>
-            <td><strong><?= number_format($remainingAmount, 2) ?> دج</strong></span></small></td>
-            <td><?= date('d/m/Y', strtotime($row['start_date'])) ?> </span></small></td>
-            <td><?= date('d/m/Y', strtotime($row['end_date'])) ?> </span></small></td>
-         </tr>
-        <?php endforeach; ?>
-    </tbody>
-</table>
-
-<a href="index.php" class="btn">🔙 العودة للميزانية</a>
 
 <?php include '../includes/footer.php'; ?>

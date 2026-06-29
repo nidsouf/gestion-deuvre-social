@@ -32,7 +32,6 @@ if (!$deduction) {
 // حفظ البيانات الأصلية (أول مرة فقط)
 if (!isset($_SESSION['original_deduction_' . $id])) {
     $_SESSION['original_deduction_' . $id] = [
-        'start_date' => $deduction['start_date'],
         'end_date' => $deduction['end_date'],
         'monthly_amount' => $deduction['monthly_amount'],
         'total_months' => $deduction['total_months']
@@ -51,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $newEnd = date('Y-m-d', strtotime($deduction['end_date'] . " + $postponeMonths months"));
             $update = $pdo->prepare("UPDATE deductions SET end_date = ? WHERE id = ?");
             if ($update->execute([$newEnd, $id])) {
+                regenerateMonthlyInstallments($id, true);
                 $_SESSION['toast'] = ['message' => "✅ تم تأجيل الاقتطاع {$postponeMonths} شهراً. التاريخ الجديد: " . date('d/m/Y', strtotime($newEnd)), 'type' => 'success', 'duration' => 4000];
                 header("Location: list.php");
                 exit;
@@ -86,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             $update = $pdo->prepare("UPDATE deductions SET end_date = ?, total_months = ?, monthly_amount = ? WHERE id = ?");
             if ($update->execute([$newEnd, $newTotalMonths, $newMonthlyAmount, $id])) {
+                regenerateMonthlyInstallments($id, true);
                 $_SESSION['toast'] = ['message' => "✅ تم تقديم الاقتطاع {$months} شهراً. المبلغ الشهري الجديد: " . number_format($newMonthlyAmount, 0) . " دج", 'type' => 'success', 'duration' => 4000];
                 header("Location: list.php");
                 exit;
@@ -101,9 +102,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     } 
     elseif ($action == 'cancel') {
+        // التحقق من وجود البيانات الأصلية
+        if (!isset($_SESSION['original_deduction_' . $id])) {
+            $_SESSION['toast'] = ['message' => '⚠️ لا توجد بيانات أصلية للإلغاء', 'type' => 'warning', 'duration' => 4000];
+            header("Location: postpone.php?id=$id");
+            exit;
+        }
+        
         $original = $_SESSION['original_deduction_' . $id];
-        $update = $pdo->prepare("UPDATE deductions SET start_date = ?, end_date = ?, total_months = ?, monthly_amount = ? WHERE id = ?");
-        if ($update->execute([$original['start_date'], $original['end_date'], $original['total_months'], $original['monthly_amount'], $id])) {
+        $update = $pdo->prepare("UPDATE deductions SET end_date = ?, total_months = ?, monthly_amount = ? WHERE id = ?");
+        if ($update->execute([$original['end_date'], $original['total_months'], $original['monthly_amount'], $id])) {
+            regenerateMonthlyInstallments($id, true);
+            unset($_SESSION['original_deduction_' . $id]);
             $_SESSION['toast'] = ['message' => '✅ تم إلغاء التعديل والعودة إلى البيانات الأصلية', 'type' => 'success', 'duration' => 3000];
             header("Location: list.php");
             exit;
@@ -131,10 +141,6 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
     .info-table { width: 100%; border-collapse: collapse; }
     .info-table td { padding: 8px; border-bottom: 1px solid #ddd; }
     .info-table td:first-child { font-weight: bold; width: 40%; }
-    .alert { padding: 12px; border-radius: 12px; margin-bottom: 20px; }
-    .alert-success { background: #d4edda; color: #155724; }
-    .alert-error { background: #f8d7da; color: #721c24; }
-    .alert-warning { background: #fff3cd; color: #856404; }
     .option-card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid #e0e0e0; }
     .option-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #2a5298; }
     .form-group { margin-bottom: 15px; }
@@ -146,6 +152,42 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
     .btn-cancel { background: #dc3545; color: white; }
     .btn-secondary { background: #6c757d; color: white; }
     .highlight { background: #fff3cd; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
+    
+    /* تنسيق النافذة المنبثقة */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+        align-items: center;
+        justify-content: center;
+    }
+    .modal-content {
+        background-color: #fefefe;
+        margin: auto;
+        padding: 25px;
+        border-radius: 20px;
+        width: 400px;
+        text-align: center;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    }
+    .modal-content h3 {
+        color: #dc3545;
+        margin-bottom: 15px;
+    }
+    .modal-content button {
+        margin: 10px 5px;
+        padding: 8px 20px;
+        border-radius: 30px;
+        border: none;
+        cursor: pointer;
+    }
+    .btn-confirm { background: #dc3545; color: white; }
+    .btn-close { background: #6c757d; color: white; }
 </style>
 
 <div class="postpone-container">
@@ -169,7 +211,7 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
                 <?php else: ?>
                     <span style="color: green;">✅ نشط (متبقي <?= round($daysRemaining) ?> يوم)</span>
                 <?php endif; ?>
-            </td></tr>
+             </td></tr>
             <?php if($hasOriginalDates): ?>
             <tr style="background: #e3f2fd;">
                 <td>📌 البيانات الأصلية</td>
@@ -177,8 +219,8 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
                     المبلغ الشهري: <strong><?= number_format($_SESSION['original_deduction_' . $id]['monthly_amount'], 2) ?> دج</strong><br>
                     عدد الأشهر: <strong><?= $_SESSION['original_deduction_' . $id]['total_months'] ?> شهر</strong><br>
                     تاريخ النهاية: <?= date('d/m/Y', strtotime($_SESSION['original_deduction_' . $id]['end_date'])) ?>
-                </td>
-            </tr>
+                 </td>
+             </tr>
             <?php endif; ?>
         </table>
     </div>
@@ -229,11 +271,11 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
         </form>
     </div>
 
-    <!-- إلغاء التعديل -->
+    <!-- إلغاء التعديل مع نافذة منبثقة -->
     <?php if($hasOriginalDates): ?>
     <div class="option-card" style="border-color: #dc3545;">
         <div class="option-title" style="border-bottom-color: #dc3545;">🔄 إلغاء التعديل</div>
-        <form method="POST">
+        <form method="POST" id="cancelForm">
             <input type="hidden" name="action" value="cancel">
             <p>العودة إلى البيانات الأصلية:</p>
             <ul>
@@ -241,7 +283,7 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
                 <li>عدد الأشهر: <strong><?= $_SESSION['original_deduction_' . $id]['total_months'] ?> شهر</strong></li>
                 <li>تاريخ النهاية: <strong><?= date('d/m/Y', strtotime($_SESSION['original_deduction_' . $id]['end_date'])) ?></strong></li>
             </ul>
-            <button type="submit" class="btn btn-cancel" onclick="return confirm('هل أنت متأكد من إلغاء التعديل؟')">🔄 إلغاء التعديل</button>
+            <button type="button" class="btn btn-cancel" id="showCancelModalBtn">🔄 إلغاء التعديل</button>
         </form>
     </div>
     <?php endif; ?>
@@ -250,5 +292,52 @@ $hasOriginalDates = isset($_SESSION['original_deduction_' . $id]) &&
         <a href="list.php" class="btn btn-secondary">🔙 العودة إلى القائمة</a>
     </div>
 </div>
+
+<!-- نافذة تأكيد الإلغاء المنبثقة -->
+<div id="cancelModal" class="modal">
+    <div class="modal-content">
+        <h3>⚠️ تأكيد إلغاء التعديل</h3>
+        <p>هل أنت متأكد من إلغاء جميع التعديلات والعودة إلى البيانات الأصلية؟</p>
+        <button id="confirmCancelBtn" class="btn-confirm">نعم، إلغاء التعديل</button>
+        <button id="closeModalBtn" class="btn-close">لا، إلغاء</button>
+    </div>
+</div>
+
+<script>
+    // الحصول على عناصر النافذة المنبثقة
+    var modal = document.getElementById('cancelModal');
+    var showModalBtn = document.getElementById('showCancelModalBtn');
+    var confirmBtn = document.getElementById('confirmCancelBtn');
+    var closeBtn = document.getElementById('closeModalBtn');
+    var cancelForm = document.getElementById('cancelForm');
+
+    // فتح النافذة عند الضغط على زر الإلغاء
+    if (showModalBtn) {
+        showModalBtn.onclick = function() {
+            modal.style.display = 'flex';
+        }
+    }
+
+    // إرسال النموذج عند تأكيد الإلغاء
+    if (confirmBtn) {
+        confirmBtn.onclick = function() {
+            cancelForm.submit();
+        }
+    }
+
+    // إغلاق النافذة عند الضغط على إلغاء
+    if (closeBtn) {
+        closeBtn.onclick = function() {
+            modal.style.display = 'none';
+        }
+    }
+
+    // إغلاق النافذة عند الضغط خارج المحتوى
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+</script>
 
 <?php include '../includes/footer.php'; ?>

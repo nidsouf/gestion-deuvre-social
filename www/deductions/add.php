@@ -1,164 +1,127 @@
 <?php
+ob_start();
 session_start();
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit;
-}
+require_once '../includes/auth_check.php';
 require_once '../config/database.php';
+require_once '../includes/security.php';
 require_once '../includes/functions.php';
 
-// ========== معالجة POST قبل أي ناتج ==========
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // التحقق من وجود البيانات الأساسية
-    if (empty($_POST['employee_id']) || empty($_POST['source_id']) || empty($_POST['total_amount']) || empty($_POST['total_months']) || empty($_POST['start_date'])) {
-        $_SESSION['toast'] = ['message' => 'يرجى ملء جميع الحقول المطلوبة', 'type' => 'warning', 'duration' => 4000];
-        header("Location: add.php");
-        exit;
-    }
-
-    $employee_id = $_POST['employee_id'];
-    $source_id = $_POST['source_id'];
-    $total_amount = floatval($_POST['total_amount']);
-    $total_months = intval($_POST['total_months']);
-    $start_date = $_POST['start_date'];
-    $grant_date = !empty($_POST['grant_date']) ? $_POST['grant_date'] : $start_date;
-    $is_loan = isset($_POST['is_loan']) ? 1 : 0;
-
-    // التحقق من صحة البيانات
-    if ($total_amount <= 0 || $total_months <= 0) {
-        $_SESSION['toast'] = ['message' => 'المبلغ وعدد الأشهر يجب أن يكونا أكبر من صفر', 'type' => 'error', 'duration' => 4000];
-        header("Location: add.php");
-        exit;
-    }
-
-    $monthly_amount = $total_amount / $total_months;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCSRFToken();
     
-    // ========== حساب تاريخ النهاية بدقة باستخدام DateInterval ==========
-    $startDateTime = new DateTime($start_date);
-    $endDateTime = clone $startDateTime;
-    $monthsToAdd = $total_months - 1;
-    if ($monthsToAdd > 0) {
-        $interval = new DateInterval('P' . $monthsToAdd . 'M');
-        $endDateTime->add($interval);
+    $employee_id   = (int)$_POST['employee_id'];
+    $source_id     = (int)$_POST['source_id'];
+    $total_amount  = (float)$_POST['total_amount'];      // المبلغ الكلي
+    $total_months  = (int)$_POST['total_months'];        // عدد الأشهر
+    $start_date    = $_POST['start_date'];
+    $is_loan       = isset($_POST['is_loan']) ? 1 : 0;
+    $notes         = trim($_POST['notes'] ?? '');
+    
+    // التحقق من صحة المدخلات
+    if ($total_amount <= 0 || $total_months <= 0 || !$start_date) {
+        $_SESSION['toast'] = ['message' => 'يرجى ملء جميع الحقول المطلوبة بشكل صحيح', 'type' => 'error', 'duration' => 3000];
+        header("Location: add.php");
+        exit;
     }
-    // إذا أردت أن يكون تاريخ النهاية هو اليوم الأخير من ذلك الشهر (اختياري)
-    // $endDateTime->modify('last day of this month');
-    $end_date = $endDateTime->format('Y-m-d');
-
-    // بدء المعاملة (transaction) للتأكد من سلامة البيانات
-    $pdo->beginTransaction();
+    
+    // حساب المبلغ الشهري وتاريخ النهاية
+    $monthly_amount = $total_amount / $total_months;
+    // يمكن تقريب المبلغ الشهري إلى منزلتين عشريتين (اختياري)
+    $monthly_amount = round($monthly_amount, 2);
+    // حساب تاريخ النهاية: إضافة (total_months - 1) شهر إلى تاريخ البداية
+    $end_date = date('Y-m-d', strtotime("+".($total_months - 1)." months", strtotime($start_date)));
+    
     try {
-        // إضافة الاقتطاع مع grant_date
-        $stmt = $pdo->prepare("INSERT INTO deductions (employee_id, source_id, monthly_amount, total_months, start_date, end_date, is_loan, grant_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$employee_id, $source_id, $monthly_amount, $total_months, $start_date, $end_date, $is_loan, $grant_date]);
-        $deduction_id = $pdo->lastInsertId();
-
-        // لو السلفة: خصم من الميزانية وتسجيل المعاملة
-        if ($is_loan) {
-            updateBudget($total_amount, 'deduct');
-            $pdo->prepare("
-                INSERT INTO budget_transactions (amount, type, reference_id, description, is_deduct)
-                VALUES (?, 'loan', ?, 'سلفة جديدة', 1)
-            ")->execute([$total_amount, $deduction_id]);
-        }
-
-        $pdo->commit();
-        $_SESSION['toast'] = ['message' => 'تم إضافة الاقتطاع بنجاح', 'type' => 'success', 'duration' => 3000];
+        $stmt = $pdo->prepare("
+            INSERT INTO deductions (employee_id, source_id, monthly_amount, total_months, start_date, end_date, is_loan, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([$employee_id, $source_id, $monthly_amount, $total_months, $start_date, $end_date, $is_loan, $notes]);
+        $new_id = $pdo->lastInsertId();
+        
+        // توليد الأقساط الشهرية
+        regenerateMonthlyInstallments($new_id, false);
+        
+        $_SESSION['toast'] = ['message' => '✅ تم إضافة الاقتطاع بنجاح', 'type' => 'success', 'duration' => 3000];
         header("Location: list.php");
         exit;
     } catch (Exception $e) {
-        $pdo->rollBack();
-        $_SESSION['toast'] = ['message' => 'حدث خطأ أثناء حفظ الاقتطاع: ' . $e->getMessage(), 'type' => 'error', 'duration' => 5000];
+        $_SESSION['toast'] = ['message' => '❌ خطأ: ' . $e->getMessage(), 'type' => 'error', 'duration' => 5000];
         header("Location: add.php");
         exit;
     }
 }
 
-// ========== بعد المعالجة، نبدأ عرض الصفحة ==========
-include '../includes/header.php';
-
-$employees = $pdo->query("SELECT id, name FROM employees ORDER BY name")->fetchAll();
+$employees = $pdo->query("SELECT id, name, category FROM employees ORDER BY name")->fetchAll();
 $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll();
+$csrf_token = generateCSRFToken();
+include '../includes/header.php';
 ?>
 
 <style>
-    .form-container {
-        max-width: 600px;
-        margin: 30px auto;
-        background: white;
-        padding: 25px;
-        border-radius: 20px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    }
-    label {
-        display: block;
-        margin-top: 15px;
-        font-weight: bold;
-    }
-    input, select {
-        width: 100%;
-        padding: 8px;
-        margin-top: 5px;
-        border-radius: 12px;
-        border: 1px solid #ccc;
-    }
-    button {
-        margin-top: 20px;
-        background: #2a5298;
-        color: white;
-        padding: 10px;
-        width: 100%;
-        border: none;
-        border-radius: 30px;
-        font-weight: bold;
-        cursor: pointer;
-    }
-    .checkbox-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 15px;
-    }
+    .form-container { max-width: 600px; margin: 20px auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border-radius: 10px; border: 1px solid #ccc; }
+    .btn-primary { background: #2a5298; color: white; padding: 10px 20px; border-radius: 30px; border: none; cursor: pointer; }
+    .btn-secondary { background: #6c757d; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; display: inline-block; text-align: center; }
 </style>
 
 <div class="form-container">
     <h2>➕ إضافة اقتطاع جديد</h2>
     <form method="POST">
-        <label>👤 الموظف</label>
-        <select name="employee_id" required>
-            <option value="">اختر الموظف</option>
-            <?php foreach($employees as $emp): ?>
-                <option value="<?= $emp['id'] ?>"><?= htmlspecialchars($emp['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-
-        <label>📁 المصدر</label>
-        <select name="source_id" required>
-            <option value="">اختر المصدر</option>
-            <?php foreach($sources as $src): ?>
-                <option value="<?= $src['id'] ?>"><?= htmlspecialchars($src['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-
-        <label>💰 المبلغ الكلي (دج)</label>
-        <input type="number" step="0.01" name="total_amount" required>
-
-        <label>📊 عدد الأقساط (شهور)</label>
-        <input type="number" name="total_months" required>
-
-        <label>📅 تاريخ بداية الاقتطاع</label>
-        <input type="date" name="start_date" required>
-
-        <label>📅 تاريخ صرف السلفة (تاريخ منحها للموظف)</label>
-        <input type="date" name="grant_date" value="<?= date('Y-m-d') ?>">
-        <small>يستخدم هذا التاريخ في المحضر لتحديد شهر الصرف (للسلف فقط)</small>
-
-        <div class="checkbox-group">
-            <input type="checkbox" name="is_loan" id="is_loan">
-            <label for="is_loan">🔁 سلفة (تُرد للميزانية)</label>
+        <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
+        
+        <div class="form-group">
+            <label>الموظف</label>
+            <select name="employee_id" required>
+                <option value="">اختر الموظف</option>
+                <?php foreach($employees as $emp): ?>
+                    <option value="<?= $emp['id'] ?>"><?= htmlspecialchars($emp['name']) ?> (<?= $emp['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?>)</option>
+                <?php endforeach; ?>
+            </select>
         </div>
-
-        <button type="submit">💾 حفظ الاقتطاع</button>
+        
+        <div class="form-group">
+            <label>المصدر</label>
+            <select name="source_id" required>
+                <option value="">اختر المصدر</option>
+                <?php foreach($sources as $src): ?>
+                    <option value="<?= $src['id'] ?>"><?= htmlspecialchars($src['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>المبلغ الكلي (دج)</label>
+            <input type="number" step="0.01" name="total_amount" required placeholder="مثال: 100000.00">
+        </div>
+        
+        <div class="form-group">
+            <label>عدد الأشهر (الأقساط)</label>
+            <input type="number" name="total_months" required placeholder="مثال: 10">
+        </div>
+        
+        <div class="form-group">
+            <label>تاريخ بداية الاقتطاع</label>
+            <input type="date" name="start_date" required>
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="is_loan" value="1"> سلفة (قرض)
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label>ملاحظات</label>
+            <textarea name="notes" rows="3"></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 10px; justify-content: space-between;">
+            <button type="submit" class="btn-primary">💾 حفظ</button>
+            <a href="list.php" class="btn-secondary">إلغاء</a>
+        </div>
     </form>
 </div>
 

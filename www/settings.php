@@ -1,10 +1,23 @@
 <?php
 session_start();
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'admin') {
+if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
-require_once 'config/database.php';
+// التحقق من الصلاحية: إذا لم يكن الدور موجوداً في الجلسة، نستعلمه من قاعدة البيانات
+if (!isset($_SESSION['role'])) {
+    require_once 'config/database.php';
+    $stmt = $pdo->prepare("SELECT role FROM users WHERE id = ?");
+    $stmt->execute([$_SESSION['user_id']]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    $_SESSION['role'] = $user['role'] ?? 'user';
+}
+if ($_SESSION['role'] !== 'admin') {
+    header("Location: index.php");
+    exit;
+}
+// باقي الكود...
+
 include 'includes/header.php';
 
 // ========== إنشاء جدول settings إذا لم يكن موجوداً ==========
@@ -113,6 +126,7 @@ while ($row = $stmt->fetch()) {
             <label>⚠️ حد التنبيه لانخفاض الميزانية (دج)</label>
             <input type="number" name="low_budget_alert" value="<?= htmlspecialchars($settings['low_budget_alert'] ?? '100000') ?>">
         </div>
+        <a href="confirm_upgrade.php" class="btn btn-warning">🔄 ترقية قاعدة البيانات</a>
         <button type="submit" class="btn-sm">💾 حفظ الإعدادات</button>
     </form>
 </div>
