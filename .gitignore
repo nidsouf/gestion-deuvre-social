@@ -1,16 +1,31 @@
-# Cache objects
-packer_cache/
+# تجاهل ملف قاعدة البيانات (بيانات حساسة)
+*.db
+*.sqlite
+*.sqlite3
 
-# Crash log
-crash.log
+# تجاهل مجلد السجلات والرفع
+logs/
+uploads/
 
-# https://www.packer.io/guides/hcl/variables
-# Exclude all .pkrvars.hcl files, which are likely to contain sensitive data, 
-# such as password, private keys, and other secrets. These should not be part of 
-# version control as they are data points which are potentially sensitive and 
-# subject to change depending on the environment.
-#
-*.pkrvars.hcl
+# تجاهل الملفات المؤقتة
+*.log
+*.tmp
+*.cache
+*.temp
 
-# For built boxes
-*.box
+# تجاهل ملفات النظام
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# تجاهل مجلد PHP (يمكن إعادة تحميله لاحقاً - حجمه كبير)
+php/
+
+# تجاهل ملفات الإعدادات الشخصية
+settings.json
+# تجاهل مجلد PHPDesktop بالكامل (لأن حجمه كبير)
+PHPDesktop/
+PHPDesktop/*
+*.dll
+*.exe
+*.pak
