@@ -37,8 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             try {
                 // إضافة الموظف
-                $stmt = $pdo->prepare("INSERT INTO employees (name, category, hire_date) VALUES (?, ?, ?)");
-                $stmt->execute([$name, $category, $hire_date ?: null]);
+                $account_number = trim($_POST['account_number'] ?? '');
+                $stmt = $pdo->prepare("INSERT INTO employees (name, category, account_number) VALUES (?, ?, ?)");
+                $stmt->execute([$name, $category, $account_number]);
                 $new_id = $pdo->lastInsertId();
                 
                 // تسجيل العملية
@@ -128,7 +129,11 @@ $csrf_token = generateCSRFToken();
             <input type="date" name="hire_date" value="<?= escape($hire_date) ?>">
             <small>يُستخدم لحساب أوراق العمرة</small>
         </div>
-        
+
+        <div class="form-group">
+            <label>رقم الحساب (بنكي / اجتماعي)</label>
+            <input type="text" name="account_number" placeholder="مثال: 12345-6789">
+        </div>
         <button type="submit" class="btn-save">💾 حفظ</button>
     </form>
 </div>

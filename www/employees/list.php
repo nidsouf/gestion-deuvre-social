@@ -143,7 +143,7 @@ $totalContract = $pdo->query("SELECT COUNT(*) FROM employees WHERE category = 'C
     <div style="overflow-x: auto;">
         <table class="data-table">
             <thead>
-                <tr><th>#</th><th>الاسم</th><th>التصنيف</th><th>تاريخ التوظيف</th><th>الإجراءات</th></tr>
+                <tr><th>#</th><th>الاسم</th><th>التصنيف</th><th>تاريخ التوظيف</th><th>رقم الحساب</th><th>الإجراءات</th></tr>
             </thead>
             <tbody>
                 <?php if (empty($employees)): ?>
@@ -155,6 +155,7 @@ $totalContract = $pdo->query("SELECT COUNT(*) FROM employees WHERE category = 'C
                             <td><?= escape($emp['name']) ?>
                             <td><?= $emp['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?>
                             <td><?= $emp['hire_date'] ? date('d/m/Y', strtotime($emp['hire_date'])) : '—' ?>
+                            <td><?= escape($emp['account_number'] ?? '—') ?></td>
                             <td class="action-buttons">
                                 <a href="edit.php?id=<?= $emp['id'] ?>" class="btn-edit">✏️ تعديل</a>
                                 <a href="deductions.php?id=<?= $emp['id'] ?>" class="btn-view-deductions">📋 عرض الاقتطاعات</a>

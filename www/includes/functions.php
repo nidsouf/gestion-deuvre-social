@@ -325,4 +325,12 @@ function updateRule($rule_code, $value) {
     $stmt = $pdo->prepare("UPDATE system_rules SET rule_value = ?, rule_type = ?, updated_at = datetime('now') WHERE rule_code = ?");
     return $stmt->execute([$value, $type, $rule_code]);
 }
+
+// في includes/functions.php
+if (!function_exists('safeFormatDate')) {
+    function safeFormatDate($date) {
+        if (empty($date) || $date === '0000-00-00' || $date === '1970-01-01') return '—';
+        return date('d/m/Y', strtotime($date));
+    }
+}
 ?>

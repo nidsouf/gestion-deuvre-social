@@ -1,9 +1,6 @@
 <?php
 /**
  * deductions/list.php - قائمة الاقتطاعات
- * - إحصائيات (الكل، نشط، ينتهي قريباً، منتهي)
- * - فلاتر (المصدر، الحالة، البحث)
- * - أزرار: تعديل، عرض التفاصيل، تسديد مقدم (للسلف فقط)، إلغاء التسديد (في حال وجود تسديد نشط)، حذف (مودال)
  */
 ob_start();
 session_start();
@@ -12,17 +9,24 @@ require_once '../config/database.php';
 require_once '../includes/security.php';
 require_once '../includes/functions.php';
 
+// ========== تعريف دالة safeFormatDate محلياً (حتى تُضاف إلى functions.php) ==========
+if (!function_exists('safeFormatDate')) {
+    function safeFormatDate($date) {
+        if (empty($date) || $date === '0000-00-00' || $date === '1970-01-01') return '—';
+        return date('d/m/Y', strtotime($date));
+    }
+}
+
 $search = isset($_GET['search']) ? sanitizeInput($_GET['search']) : '';
 $source_filter = isset($_GET['source']) ? (int)$_GET['source'] : 0;
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
 $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll();
 
-// بناء الاستعلام الرئيسي (إضافة credit_balance)
 $sql = "
     SELECT 
         d.id, e.name as employee_name, s.name as source_name,
-        d.monthly_amount, d.total_months, d.start_date, d.end_date, d.is_loan, d.credit_balance,
+        d.monthly_amount, d.total_months, d.start_date, d.end_date, d.is_loan, d.credit_balance, d.grant_date,
         CASE 
             WHEN d.end_date < date('now') THEN 'منتهي'
             WHEN d.end_date < date('now', '+30 days') THEN 'ينتهي قريباً'
@@ -59,13 +63,11 @@ foreach ($params as $key => $value) {
 $stmt->execute();
 $deductions = $stmt->fetchAll();
 
-// إحصائيات سريعة
 $totalAll = count($deductions);
 $totalActive = count(array_filter($deductions, fn($d) => $d['status'] == 'نشط'));
 $totalExpiring = count(array_filter($deductions, fn($d) => $d['status'] == 'ينتهي قريباً'));
 $totalExpired = count(array_filter($deductions, fn($d) => $d['status'] == 'منتهي'));
 
-// جلب التسديدات المقدمة النشطة (غير ملغاة) لكل اقتطاع
 $earlyMap = [];
 $stmtEarly = $pdo->query("SELECT deduction_id, id FROM early_payments WHERE is_reversed = 0");
 while ($row = $stmtEarly->fetch()) {
@@ -77,7 +79,6 @@ include '../includes/header.php';
 ?>
 
 <style>
-    /* الأزرار والتصميمات */
     .btn-edit { background: #ffc107; color: #000; padding: 4px 12px; border-radius: 20px; text-decoration: none; display: inline-block; margin: 2px; font-size: 12px; }
     .btn-view { background: #17a2b8; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
     .btn-view:hover { background: #138496; }
@@ -86,6 +87,8 @@ include '../includes/header.php';
     .btn-early-payment:hover { background: #e36209; }
     .btn-undo { background: #6c757d; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
     .btn-undo:hover { background: #5a6268; }
+    .btn-postpone { background: #ff9800; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
+    .btn-postpone:hover { background: #e68900; }
     .stats-grid { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
     .stat-card { background: white; border-radius: 20px; padding: 20px; text-align: center; flex: 1; min-width: 150px; border-bottom: 3px solid; text-decoration: none; color: inherit; }
     .stat-card.all { border-bottom-color: #2a5298; }
@@ -108,22 +111,11 @@ include '../includes/header.php';
     .modal-content { background: white; border-radius: 20px; padding: 25px; width: 400px; text-align: center; }
     .btn-confirm { background: #dc3545; color: white; border: none; padding: 8px 20px; border-radius: 30px; cursor: pointer; }
     .btn-cancel { background: #6c757d; color: white; border: none; padding: 8px 20px; border-radius: 30px; cursor: pointer; }
-.btn-postpone {
-    background: #ff9800;
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    text-decoration: none;
-    font-size: 12px;
-    display: inline-block;
-    margin: 2px;
-}
 </style>
 
 <div style="max-width: 1200px; margin: 0 auto;">
     <h2>📋 قائمة الاقتطاعات</h2>
     
-    <!-- الإحصائيات -->
     <div class="stats-grid">
         <a href="?status=all" class="stat-card all"><div>📊 الكل</div><div class="number"><?= $totalAll ?></div></a>
         <a href="?status=active" class="stat-card active"><div>✅ نشط</div><div class="number"><?= $totalActive ?></div></a>
@@ -131,7 +123,6 @@ include '../includes/header.php';
         <a href="?status=expired" class="stat-card expired"><div>❌ منتهي</div><div class="number"><?= $totalExpired ?></div></a>
     </div>
     
-    <!-- فلاتر البحث -->
     <div class="filters">
         <form method="GET" style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
             <select name="source">
@@ -166,13 +157,14 @@ include '../includes/header.php';
                     <th>الرصيد الدائن (دج)</th>
                     <th>تاريخ البداية</th>
                     <th>تاريخ النهاية</th>
+                    <th>تاريخ الصرف</th>
                     <th>الحالة</th>
                     <th>الإجراءات</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($deductions)): ?>
-                    <tr><td colspan="10" style="text-align:center;">لا توجد بيانات</span></small></td>
+                    <tr><td colspan="11" style="text-align:center;">لا توجد بيانات</td></tr>
                 <?php else: ?>
                     <?php foreach ($deductions as $d): 
                         $hasEarly = isset($earlyMap[$d['id']]);
@@ -184,19 +176,20 @@ include '../includes/header.php';
                                 <?php if ($d['is_loan']): ?>
                                     <span style="background:#ff9800; color:#fff; padding:2px 6px; border-radius:12px; font-size:10px; display:inline-block; margin-right:5px;">سلفة</span>
                                 <?php endif; ?>
-                             </span></small>
-                            <td><?= escape($d['employee_name']) ?> </span></small>
-                            <td><?= escape($d['source_name']) ?> </span></small>
-                            <td><?= number_format($d['monthly_amount'], 2) ?> </span></small>
-                            <td><?= $d['total_months'] ?> شهر</span></small>
-                            <td><?= number_format($d['credit_balance'], 2) ?> </span></small>
-                            <td><?= date('d/m/Y', strtotime($d['start_date'])) ?> </span></small>
-                            <td><?= date('d/m/Y', strtotime($d['end_date'])) ?> </span></small>
+                            </td>
+                            <td><?= escape($d['employee_name']) ?></td>
+                            <td><?= escape($d['source_name']) ?></td>
+                            <td><?= number_format($d['monthly_amount'], 2) ?></td>
+                            <td><?= $d['total_months'] ?> شهر</td>
+                            <td><?= number_format($d['credit_balance'], 2) ?></td>
+                            <td><?= date('d/m/Y', strtotime($d['start_date'])) ?></td>
+                            <td><?= date('d/m/Y', strtotime($d['end_date'])) ?></td>
+                            <td><?= $d['is_loan'] ? safeFormatDate($d['grant_date']) : '—' ?></td>
                             <td>
                                 <span class="status-badge status-<?= $d['status'] == 'نشط' ? 'active' : ($d['status'] == 'ينتهي قريباً' ? 'expiring' : 'expired') ?>">
                                     <?= $d['status'] ?>
                                 </span>
-                             </span></small>
+                            </td>
                             <td class="action-buttons" style="text-align:center;">
                                 <a href="edit.php?id=<?= $d['id'] ?>" class="btn-edit">✏️ تعديل</a>
                                 <a href="view.php?id=<?= $d['id'] ?>" class="btn-view">👁️ عرض التفاصيل</a>
@@ -209,7 +202,7 @@ include '../includes/header.php';
                                     <a href="undo_early_payment.php?id=<?= $earlyId ?>" class="btn-undo" target="_blank">↩️ إلغاء التسديد</a>
                                 <?php endif; ?>
                                 <button type="button" class="btn-delete" data-id="<?= $d['id'] ?>" data-name="<?= escape($d['employee_name']) ?>">🗑️ حذف</button>
-                             </span></small>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

@@ -8,19 +8,27 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 
+// ============================================================
+// دوال مساعدة للتواريخ
+// ============================================================
 $arabicMonths = [
     1 => 'جانفي', 2 => 'فيفري', 3 => 'مارس', 4 => 'أفريل',
     5 => 'ماي', 6 => 'جوان', 7 => 'جويلية', 8 => 'أوت',
     9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
 ];
-
 $arabicDays = [
     'Monday' => 'الاثنين', 'Tuesday' => 'الثلاثاء', 'Wednesday' => 'الأربعاء',
     'Thursday' => 'الخميس', 'Friday' => 'الجمعة', 'Saturday' => 'السبت',
     'Sunday' => 'الأحد'
 ];
 
+function safeFormatDate($date) {
+    if (empty($date) || $date === '0000-00-00') return '—';
+    return date('d/m/Y', strtotime($date));
+}
+
 function formatDateArabicLocal($date, $arabicDays, $arabicMonths) {
+    if (empty($date) || $date === '0000-00-00') return '—';
     $ts = strtotime($date);
     $dayEn = date('l', $ts);
     $dayAr = $arabicDays[$dayEn] ?? $dayEn;
@@ -65,27 +73,27 @@ $stmt = $pdo->prepare("SELECT * FROM meeting_minutes WHERE month = ? AND year = 
 $stmt->execute([$month, $year, $session_number]);
 $minute = $stmt->fetch();
 
-// ========== 1. المنح العادية ==========
-// ========== 1. المنح العادية (باستثناء منح وجبات المطعم) ==========
+// ========== 1. المنح العادية (باستثناء وجبات المطعم) ==========
 $stmtGrants = $pdo->prepare("
-    SELECT eg.*, e.name as employee_name, g.name as grant_name, g.amount
+    SELECT eg.*, e.name as employee_name, e.account_number, g.name as grant_name, eg.amount as amount
     FROM employee_grants eg
     JOIN employees e ON eg.employee_id = e.id
     JOIN grants g ON eg.grant_id = g.id
     WHERE strftime('%Y-%m', eg.grant_date) = :year_month
-      AND g.name != 'منحة وجبات المطعم'   -- استبعاد منح الوجبات
+      AND g.name != 'منحة وجبات المطعم'
     ORDER BY eg.grant_date DESC
 ");
 $stmtGrants->execute([':year_month' => $year_month]);
 $grants = $stmtGrants->fetchAll();
 $totalGrants = array_sum(array_column($grants, 'amount'));
 
-// ========== 2. منح وجبات المطعم (مع category) ==========
+// ========== 2. منح وجبات المطعم ==========
 $stmtMealGrants = $pdo->prepare("
     SELECT 
         mi.*,
         e.name as employee_name,
-        e.category
+        e.category,
+        e.account_number
     FROM meal_installments mi
     JOIN employees e ON mi.employee_id = e.id
     WHERE mi.year = ? AND mi.month = ? AND mi.is_processed = 1
@@ -100,24 +108,26 @@ $stmtLoans = $pdo->prepare("
     SELECT 
         d.id,
         e.name as employee_name,
+        e.account_number,
         s.name as source_name,
         d.monthly_amount,
         d.total_months,
         d.start_date,
         d.end_date,
         d.grant_date,
+        d.created_at,
         (d.monthly_amount * d.total_months) AS total_amount,
         d.included_in_minute_id
     FROM deductions d
     JOIN employees e ON d.employee_id = e.id
     JOIN sources s ON d.source_id = s.id
     WHERE d.is_loan = 1
-      AND strftime('%Y-%m', d.grant_date) = :year_month
       AND (d.included_in_minute_id IS NULL 
            OR d.included_in_minute_id NOT IN (
                SELECT id FROM meeting_minutes 
                WHERE month = :month AND year = :year AND id != :current_minute_id
            ))
+      AND (strftime('%Y-%m', COALESCE(d.grant_date, d.created_at, d.start_date)) = :year_month)
     ORDER BY e.name
 ");
 $stmtLoans->execute([
@@ -227,7 +237,7 @@ if ($show_cheques) {
 $show_djezzy = isset($minute['show_djezzy']) ? $minute['show_djezzy'] : 0;
 
 // ==============================
-// معالجة POST
+// معالجة POST (حفظ المحضر)
 // ==============================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $meeting_date = $_POST['meeting_date'];
@@ -380,7 +390,7 @@ include '../includes/header.php';
                 <option value="">-- لا يوجد --</option>
                 <?php foreach ($umrahDraws as $draw): ?>
                     <option value="<?= $draw['id'] ?>" <?= (($minute['umrah_draw_event_id'] ?? '') == $draw['id']) ? 'selected' : '' ?>>
-                        <?= date('d/m/Y', strtotime($draw['draw_date'])) ?> - 
+                        <?= safeFormatDate($draw['draw_date']) ?> - 
                         <?= htmlspecialchars($draw['title'] ?? 'سحب') ?> 
                         (الفائز: <?= htmlspecialchars($draw['winner_name'] ?? '?') ?>)
                     </option>
@@ -406,16 +416,14 @@ include '../includes/header.php';
         <div class="form-group">
             <label>🧾 إدراج الشيكات المدفوعة للمصادر (اختياري):</label>
             <label style="font-weight: normal;">
-                <input type="checkbox" name="show_cheques" value="1" <?= ($show_cheques ? 'checked' : '') ?>>
-                إظهار قائمة الشيكات المتاحة للاختيار
+                <input type="checkbox" name="show_cheques" value="1" <?= ($show_cheques ? 'checked' : '') ?>> إظهار قائمة الشيكات المتاحة للاختيار
             </label>
         </div>
 
         <div class="form-group">
             <label>📱 إدراج إجمالي الاقتطاعات الشهرية لجيزي:</label>
             <label style="font-weight: normal;">
-                <input type="checkbox" name="show_djezzy" value="1" <?= ($show_djezzy ? 'checked' : '') ?>>
-                عرض مبلغ جيزي الشهري
+                <input type="checkbox" name="show_djezzy" value="1" <?= ($show_djezzy ? 'checked' : '') ?>> عرض مبلغ جيزي الشهري
             </label>
         </div>
 
@@ -431,10 +439,10 @@ include '../includes/header.php';
                     <?php $i=1; foreach($grants as $g): ?>
                     <tr>
                         <td><?= $i++ ?></td>
-                        <td><?= htmlspecialchars($g['employee_name']) ?></td>
+                        <td><?= htmlspecialchars($g['employee_name']) ?><br><small style="font-size:9pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($g['account_number'] ?? '—') ?></small></td>
                         <td><?= htmlspecialchars($g['grant_name']) ?></td>
-                        <td><?= number_format($g['amount'], 2) ?> دج</span></small></td>
-                        <td><?= date('d/m/Y', strtotime($g['grant_date'])) ?></td>
+                        <td><?= number_format($g['amount'], 2) ?> دج</td>
+                        <td><?= safeFormatDate($g['grant_date']) ?></td>
                         <td><?= htmlspecialchars($g['notes'] ?? '') ?></td>
                     </tr>
                     <?php endforeach; ?>
@@ -443,7 +451,7 @@ include '../includes/header.php';
             </table>
             <?php endif; ?>
 
-            <!-- ========== جدول منح وجبات المطعم (مرة واحدة فقط) ========== -->
+            <!-- ========== جدول منح وجبات المطعم ========== -->
             <?php if(!empty($meal_grants)): ?>
             <div class="section-title">🍽️ منح وجبات المطعم (نصف القيمة)</div>
             <table class="grants-table">
@@ -461,11 +469,11 @@ include '../includes/header.php';
                     <?php $i=1; foreach ($meal_grants as $mg): ?>
                     <tr>
                         <td><?= $i++ ?></td>
-                        <td><?= htmlspecialchars($mg['employee_name']) ?></td>
+                        <td><?= htmlspecialchars($mg['employee_name']) ?><br><small style="font-size:9pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($mg['account_number'] ?? '—') ?></small></td>
                         <td><?= $mg['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?></td>
                         <td><?= $mg['total_meals'] ?></td>
-                        <td><?= number_format($mg['total_amount'], 2) ?> دج</span></small></td>
-                        <td><?= number_format($mg['grant_amount'], 2) ?> دج</span></small></td>
+                        <td><?= number_format($mg['total_amount'], 2) ?> دج</td>
+                        <td><?= number_format($mg['grant_amount'], 2) ?> دج</td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -502,11 +510,11 @@ include '../includes/header.php';
                     <tr>
                         <td><input type="checkbox" name="selected_loans[]" value="<?= $l['id'] ?>"></td>
                         <td><?= $i++ ?></td>
-                        <td><?= htmlspecialchars($l['employee_name']) ?></td>
+                        <td><?= htmlspecialchars($l['employee_name']) ?><br><small style="font-size:9pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($mg['account_number'] ?? '—') ?></small></td>
                         <td><?= htmlspecialchars($l['source_name']) ?></td>
-                        <td><?= number_format($l['total_amount'], 2) ?> دج</span></small></td>
-                        <td><?= date('d/m/Y', strtotime($l['grant_date'])) ?></td>
-                        <td><?= date('d/m/Y', strtotime($l['start_date'])) ?></td>
+                        <td><?= number_format($l['total_amount'], 2) ?> دج</td>
+                        <td><?= safeFormatDate($l['grant_date']) ?></td>
+                        <td><?= safeFormatDate($l['start_date']) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -540,9 +548,9 @@ include '../includes/header.php';
                             <td><?= $i++ ?></td>
                             <td><?= htmlspecialchars($ch['source_name']) ?></td>
                             <td><?= htmlspecialchars($ch['cheque_number'] ?? '-') ?></td>
-                            <td><?= date('d/m/Y', strtotime($ch['cheque_date'])) ?></td>
+                            <td><?= safeFormatDate($ch['cheque_date']) ?></td>
                             <td><?= $ch['quarter'] ? 'الربع '.$ch['quarter'] : '---' ?></td>
-                            <td><?= number_format($ch['amount'], 2) ?> دج</span></small></td>
+                            <td><?= number_format($ch['amount'], 2) ?> دج</td>
                             <td><?= htmlspecialchars($ch['notes'] ?? '-') ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -563,8 +571,8 @@ include '../includes/header.php';
                     <td><?= $i++ ?></td>
                     <td><?= htmlspecialchars($h['employee_name']) ?><br><small>(<?= $h['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?>)</small></td>
                     <td><?= htmlspecialchars($h['prize_type']) ?></td>
-                    <td><?= number_format($h['prize_value'], 2) ?> دج</span></small></td>
-                    <td><?= date('d/m/Y', strtotime($h['honor_date'])) ?></td>
+                    <td><?= number_format($h['prize_value'], 2) ?> دج</td>
+                    <td><?= safeFormatDate($h['honor_date']) ?></td>
                     <td><?= htmlspecialchars($h['reason']) ?></td>
                 </tr>
                 <?php endforeach; ?>

@@ -5,16 +5,19 @@ require_once '../includes/auth_check.php';
 require_once '../config/database.php';
 require_once '../includes/security.php';
 require_once '../includes/functions.php';
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCSRFToken();
     
     $employee_id   = (int)$_POST['employee_id'];
     $source_id     = (int)$_POST['source_id'];
-    $total_amount  = (float)$_POST['total_amount'];      // المبلغ الكلي
-    $total_months  = (int)$_POST['total_months'];        // عدد الأشهر
+    $total_amount  = (float)$_POST['total_amount'];
+    $total_months  = (int)$_POST['total_months'];
     $start_date    = $_POST['start_date'];
     $is_loan       = isset($_POST['is_loan']) ? 1 : 0;
+    $grant_date    = !empty($_POST['grant_date']) ? $_POST['grant_date'] : null;
     $notes         = trim($_POST['notes'] ?? '');
     
     // التحقق من صحة المدخلات
@@ -24,22 +27,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     
-    // حساب المبلغ الشهري وتاريخ النهاية
-    $monthly_amount = $total_amount / $total_months;
-    // يمكن تقريب المبلغ الشهري إلى منزلتين عشريتين (اختياري)
-    $monthly_amount = round($monthly_amount, 2);
-    // حساب تاريخ النهاية: إضافة (total_months - 1) شهر إلى تاريخ البداية
+    // إذا كانت سلفة ولم يتم تحديد تاريخ صرف، نضع تاريخ اليوم
+    if ($is_loan && empty($grant_date)) {
+        $grant_date = date('Y-m-d');
+    }
+    
+    $monthly_amount = round($total_amount / $total_months, 2);
     $end_date = date('Y-m-d', strtotime("+".($total_months - 1)." months", strtotime($start_date)));
     
     try {
         $stmt = $pdo->prepare("
-            INSERT INTO deductions (employee_id, source_id, monthly_amount, total_months, start_date, end_date, is_loan, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO deductions (employee_id, source_id, monthly_amount, total_months, start_date, end_date, is_loan, grant_date, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmt->execute([$employee_id, $source_id, $monthly_amount, $total_months, $start_date, $end_date, $is_loan, $notes]);
+        $stmt->execute([$employee_id, $source_id, $monthly_amount, $total_months, $start_date, $end_date, $is_loan, $grant_date, $notes]);
         $new_id = $pdo->lastInsertId();
         
-        // توليد الأقساط الشهرية
         regenerateMonthlyInstallments($new_id, false);
         
         $_SESSION['toast'] = ['message' => '✅ تم إضافة الاقتطاع بنجاح', 'type' => 'success', 'duration' => 3000];
@@ -65,6 +68,7 @@ include '../includes/header.php';
     .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border-radius: 10px; border: 1px solid #ccc; }
     .btn-primary { background: #2a5298; color: white; padding: 10px 20px; border-radius: 30px; border: none; cursor: pointer; }
     .btn-secondary { background: #6c757d; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; display: inline-block; text-align: center; }
+    .loan-fields { background: #f8f9fa; padding: 15px; border-radius: 10px; margin-top: 10px; }
 </style>
 
 <div class="form-container">
@@ -109,8 +113,16 @@ include '../includes/header.php';
         
         <div class="form-group">
             <label>
-                <input type="checkbox" name="is_loan" value="1"> سلفة (قرض)
+                <input type="checkbox" name="is_loan" value="1" id="is_loan_checkbox" onchange="toggleLoanFields()"> سلفة (قرض)
             </label>
+        </div>
+        
+        <div id="loan_fields" class="loan-fields" style="display: none;">
+            <div class="form-group">
+                <label>📅 تاريخ الصرف</label>
+                <input type="date" name="grant_date" value="<?= date('Y-m-d') ?>">
+                <small class="text-muted">تاريخ منح السلفة (سيظهر في المحضر)</small>
+            </div>
         </div>
         
         <div class="form-group">
@@ -124,5 +136,13 @@ include '../includes/header.php';
         </div>
     </form>
 </div>
+
+<script>
+    function toggleLoanFields() {
+        var checkbox = document.getElementById('is_loan_checkbox');
+        var fields = document.getElementById('loan_fields');
+        fields.style.display = checkbox.checked ? 'block' : 'none';
+    }
+</script>
 
 <?php include '../includes/footer.php'; ?>

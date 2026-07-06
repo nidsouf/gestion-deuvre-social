@@ -45,8 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = '⚠️ صيغة تاريخ التوظيف غير صحيحة';
         } else {
             try {
-                $stmt = $pdo->prepare("UPDATE employees SET name = ?, category = ?, hire_date = ? WHERE id = ?");
-                $stmt->execute([$name, $category, $hire_date ?: null, $id]);
+                $account_number = trim($_POST['account_number'] ?? '');
+                $stmt = $pdo->prepare("UPDATE employees SET name = ?, category = ?, account_number = ? WHERE id = ?");
+                $stmt->execute([$name, $category, $account_number, $id]);
                 
                 audit('EMPLOYEE_EDITED', "Edited employee: $name (ID: $id)");
                 addNotification('تحديث موظف', "تم تحديث بيانات الموظف $name بنجاح", null, 'success');
@@ -103,6 +104,11 @@ include '../includes/header.php';
             <small>يُستخدم لحساب أوراق العمرة</small>
         </div>
         
+        <div class="form-group">
+            <label>رقم الحساب (بنكي / اجتماعي)</label>
+            <input type="text" name="account_number" value="<?= escape($emp['account_number'] ?? '') ?>" placeholder="مثال: 12345-6789">
+        </div>
+
         <button type="submit" class="btn-save">💾 تحديث البيانات</button>
         <a href="list.php" class="btn-cancel">🔙 إلغاء</a>
     </form>
