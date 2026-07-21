@@ -1,18 +1,19 @@
 <?php
 /**
- * employees/list.php - قائمة الموظفين (محسّنة بالأمان والإشعارات)
+ * employees/list.php - قائمة الموظفين (مع فلتر البطاقات)
  */
 session_start();
 require_once '../includes/auth_check.php';
 require_once '../config/database.php';
 require_once '../includes/security.php';
 require_once '../includes/functions.php';
-include '../includes/header.php';
+require_once '../includes/common_helpers.php';
 
-// معالجة البحث
+// ========== المعاملات ==========
 $search = isset($_GET['search']) ? sanitizeInput($_GET['search']) : '';
+$category_filter = isset($_GET['category']) ? $_GET['category'] : 'all';
 
-// استعلام جلب الموظفين
+// ========== بناء الاستعلام ==========
 $sql = "SELECT * FROM employees WHERE 1=1";
 $params = [];
 
@@ -20,146 +21,119 @@ if ($search) {
     $sql .= " AND name LIKE :search";
     $params[':search'] = "%$search%";
 }
+
+// فلتر الفئة (عند الضغط على البطاقة)
+if ($category_filter === 'permanent') {
+    $sql .= " AND category = 'Permanent'";
+} elseif ($category_filter === 'contract') {
+    $sql .= " AND category = 'Contract'";
+}
+// 'all' لا يضيف شرطاً
+
 $sql .= " ORDER BY name ASC";
 
 $stmt = $pdo->prepare($sql);
-foreach ($params as $key => $value) {
-    $stmt->bindValue($key, $value);
-}
+foreach ($params as $k => $v) $stmt->bindValue($k, $v);
 $stmt->execute();
 $employees = $stmt->fetchAll();
 
-// إحصائيات
-$totalEmployees = count($employees);
-$totalPermanent = $pdo->query("SELECT COUNT(*) FROM employees WHERE category = 'Permanent'")->fetchColumn();
-$totalContract = $pdo->query("SELECT COUNT(*) FROM employees WHERE category = 'Contract'")->fetchColumn();
+// ========== الإحصائيات (جميع الموظفين بدون فلتر) ==========
+$allEmployees = $pdo->query("SELECT * FROM employees")->fetchAll();
+$totalAll = count($allEmployees);
+$totalPermanent = count(array_filter($allEmployees, fn($e) => $e['category'] === 'Permanent'));
+$totalContract = count(array_filter($allEmployees, fn($e) => $e['category'] === 'Contract'));
+
+// ========== إحصائيات المعروضين (بعد الفلتر) ==========
+$displayedCount = count($employees);
+
+$csrf_token = generateCSRFToken();
+include '../includes/header.php';
 ?>
+<link rel="stylesheet" href="../assets/css/employees.css">
 
-<style>
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-    }
-    .stat-card {
-        background: white;
-        border-radius: 20px;
-        padding: 20px;
-        text-align: center;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        border-bottom: 3px solid;
-    }
-    .stat-card.total { border-bottom-color: #2a5298; }
-    .stat-card.permanent { border-bottom-color: #28a745; }
-    .stat-card.contract { border-bottom-color: #ff9800; }
-    .stat-card .number { font-size: 28px; font-weight: 700; }
-    .filters {
-        background: white;
-        border-radius: 20px;
-        padding: 15px;
-        margin-bottom: 20px;
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        align-items: center;
-    }
-    .filters input {
-        flex: 1;
-        padding: 8px 15px;
-        border: 1px solid #ddd;
-        border-radius: 30px;
-    }
-    .data-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: white;
-    }
-    .data-table th, .data-table td {
-        border: 1px solid #ddd;
-        padding: 12px;
-        text-align: center;
-    }
-    .btn-view-deductions {
-    background: #17a2b8;
-    color: white;
-    padding: 4px 10px;
-    border-radius: 15px;
-    text-decoration: none;
-    font-size: 12px;
-    display: inline-block;
-    margin: 0 2px;
-}
-.btn-view-deductions:hover {
-    background: #138496;
-}
-    .data-table th {
-        background: #2a5298;
-        color: white;
-    }
-    .btn-add {
-        background: #28a745;
-        color: white;
-        padding: 8px 20px;
-        border-radius: 30px;
-        text-decoration: none;
-        margin-bottom: 20px;
-        display: inline-block;
-    }
-    .btn-edit { background: #ffc107; color: #000; padding: 4px 12px; border-radius: 20px; text-decoration: none; }
-    .btn-delete { background: #dc3545; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; }
-</style>
-
-<div style="max-width: 1200px; margin: 0 auto;">
-    <h2 style="margin-bottom: 20px;">👥 قائمة الموظفين</h2>
-    
-    <div class="stats-grid">
-        <div class="stat-card total">
-            <h3>إجمالي الموظفين</h3>
-            <div class="number"><?= number_format($totalEmployees) ?></div>
-        </div>
-        <div class="stat-card permanent">
-            <h3>👔 دائم</h3>
-            <div class="number"><?= number_format($totalPermanent) ?></div>
-        </div>
-        <div class="stat-card contract">
-            <h3>👕 متعاقد</h3>
-            <div class="number"><?= number_format($totalContract) ?></div>
-        </div>
+<div class="employees-container">
+    <div class="employees-header">
+        <h2>👥 قائمة الموظفين <?= $category_filter != 'all' ? '('.($category_filter=='permanent'?'الدائمين':'المتعاقدين').')' : '' ?></h2>
+        <a href="add.php" class="btn-add">➕ إضافة موظف جديد</a>
     </div>
-    
-    <div class="filters">
-        <form method="GET" style="display: flex; gap: 10px; width: 100%;">
-            <input type="text" name="search" placeholder="🔍 بحث باسم الموظف..." value="<?= escape($search) ?>">
-            <button type="submit" class="btn-sm">بحث</button>
-            <?php if ($search): ?>
-                <a href="list.php" class="btn-sm" style="background:#6c757d;">إلغاء</a>
+
+    <!-- ========== بطاقات الإحصائيات (قابلة للنقر كفلاتر) ========== -->
+    <div class="stats-grid">
+        <a href="?category=all<?= $search ? '&search='.urlencode($search) : '' ?>" 
+           class="stat-card total <?= $category_filter == 'all' ? 'active-card' : '' ?>">
+            <div class="stat-icon">👥</div>
+            <div class="stat-label">إجمالي الموظفين</div>
+            <div class="stat-value"><?= number_format($totalAll) ?></div>
+        </a>
+        <a href="?category=permanent<?= $search ? '&search='.urlencode($search) : '' ?>" 
+           class="stat-card permanent <?= $category_filter == 'permanent' ? 'active-card' : '' ?>">
+            <div class="stat-icon">👔</div>
+            <div class="stat-label">دائم</div>
+            <div class="stat-value"><?= number_format($totalPermanent) ?></div>
+        </a>
+        <a href="?category=contract<?= $search ? '&search='.urlencode($search) : '' ?>" 
+           class="stat-card contract <?= $category_filter == 'contract' ? 'active-card' : '' ?>">
+            <div class="stat-icon">👕</div>
+            <div class="stat-label">متعاقد</div>
+            <div class="stat-value"><?= number_format($totalContract) ?></div>
+        </a>
+    </div>
+
+    <!-- عرض عدد النتائج المعروضة -->
+    <div style="margin-bottom:15px; font-size:14px; color:#666;">
+        عرض <?= number_format($displayedCount) ?> موظف<?= $displayedCount != 1 ? 'اً' : '' ?>
+        <?php if ($category_filter != 'all'): ?>
+            من فئة <strong><?= $category_filter == 'permanent' ? 'الدائمين' : 'المتعاقدين' ?></strong>
+        <?php endif; ?>
+        <?php if ($search): ?>
+            (بحث: "<?= htmlspecialchars($search) ?>")
+        <?php endif; ?>
+    </div>
+
+    <!-- ========== الفلاتر ========== -->
+    <div class="filter-section">
+        <form method="GET" class="filter-form">
+            <!-- الحفاظ على فلتر الفئة عند البحث -->
+            <input type="hidden" name="category" value="<?= $category_filter ?>">
+            <div class="filter-group" style="flex:2;">
+                <label>🔍 بحث</label>
+                <input type="text" name="search" placeholder="اسم الموظف..." value="<?= htmlspecialchars($search) ?>">
+            </div>
+            <button type="submit" class="btn-filter">بحث</button>
+            <?php if ($search || $category_filter != 'all'): ?>
+                <a href="list.php" class="btn-reset">🗑️ إعادة تعيين</a>
             <?php endif; ?>
         </form>
     </div>
-    
-    <a href="add.php" class="btn-add">➕ إضافة موظف جديد</a>
-    
-    <div style="overflow-x: auto;">
-        <table class="data-table">
+
+    <!-- ========== الجدول ========== -->
+    <div class="table-responsive">
+        <table class="employees-table">
             <thead>
-                <tr><th>#</th><th>الاسم</th><th>التصنيف</th><th>تاريخ التوظيف</th><th>رقم الحساب</th><th>الإجراءات</th></tr>
+                <tr>
+                    <th>#</th>
+                    <th>الاسم</th>
+                    <th>التصنيف</th>
+                    <th>تاريخ التوظيف</th>
+                    <th>رقم الحساب</th>
+                    <th>الإجراءات</th>
+                </tr>
             </thead>
             <tbody>
                 <?php if (empty($employees)): ?>
-                    <tr><td colspan="5" style="text-align:center;">لا توجد بيانات مطابقة</span></small></td>
+                    <tr><td colspan="6" class="text-center">لا توجد بيانات مطابقة</td></tr>
                 <?php else: ?>
                     <?php $i=1; foreach ($employees as $emp): ?>
                         <tr>
-                            <td><?= $i++ ?> <small>(ID:<?= $emp['id'] ?>)</small>
-                            <td><?= escape($emp['name']) ?>
-                            <td><?= $emp['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?>
-                            <td><?= $emp['hire_date'] ? date('d/m/Y', strtotime($emp['hire_date'])) : '—' ?>
-                            <td><?= escape($emp['account_number'] ?? '—') ?></td>
+                            <td><?= $i++ ?> <small>(ID:<?= $emp['id'] ?>)</small></td>
+                            <td><?= htmlspecialchars($emp['name']) ?></td>
+                            <td><?= $emp['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?></td>
+                            <td><?= safeFormatDate($emp['hire_date']) ?></td>
+                            <td><?= htmlspecialchars($emp['account_number'] ?? '—') ?></td>
                             <td class="action-buttons">
-                                <a href="edit.php?id=<?= $emp['id'] ?>" class="btn-edit">✏️ تعديل</a>
-                                <a href="deductions.php?id=<?= $emp['id'] ?>" class="btn-view-deductions">📋 عرض الاقتطاعات</a>
-                                <a href="delete.php?id=<?= $emp['id'] ?>" class="btn-delete" onclick="return confirm('هل أنت متأكد من حذف هذا الموظف؟')">🗑️ حذف</a>
+                                <a href="edit.php?id=<?= $emp['id'] ?>" class="btn-sm btn-edit">✏️ تعديل</a>
+                                <a href="deductions.php?id=<?= $emp['id'] ?>" class="btn-sm btn-view">📋 الاقتطاعات</a>
+                                <button class="btn-sm btn-delete delete-btn" data-id="<?= $emp['id'] ?>" data-name="<?= htmlspecialchars($emp['name']) ?>">🗑️ حذف</button>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -168,5 +142,71 @@ $totalContract = $pdo->query("SELECT COUNT(*) FROM employees WHERE category = 'C
         </table>
     </div>
 </div>
+
+<!-- مودال الحذف -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal-box">
+        <h3>⚠️ تأكيد الحذف</h3>
+        <p>هل أنت متأكد من حذف الموظف <strong id="deleteEmployeeName"></strong>؟</p>
+        <p class="text-muted">سيتم حذف جميع بيانات الموظف المرتبطة.</p>
+        <div class="modal-actions">
+            <button class="btn-cancel" id="cancelDelete">إلغاء</button>
+            <button class="btn-confirm-delete" id="confirmDelete">نعم، احذف</button>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('deleteModal');
+    const deleteName = document.getElementById('deleteEmployeeName');
+    const confirmBtn = document.getElementById('confirmDelete');
+    const cancelBtn = document.getElementById('cancelDelete');
+    let currentId = null;
+
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            currentId = this.dataset.id;
+            deleteName.textContent = this.dataset.name;
+            modal.classList.add('active');
+        });
+    });
+
+    cancelBtn.addEventListener('click', function() {
+        modal.classList.remove('active');
+    });
+
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) {
+            modal.classList.remove('active');
+        }
+    });
+
+    confirmBtn.addEventListener('click', function() {
+        if (!currentId) return;
+        const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+        fetch('delete.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'id=' + currentId + '&csrf_token=' + encodeURIComponent(csrfToken)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('خطأ: ' + data.message);
+            }
+        })
+        .catch(() => {
+            alert('حدث خطأ في الاتصال بالخادم');
+        })
+        .finally(() => {
+            modal.classList.remove('active');
+        });
+    });
+});
+</script>
 
 <?php include '../includes/footer.php'; ?>

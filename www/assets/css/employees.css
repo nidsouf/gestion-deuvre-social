@@ -1,0 +1,376 @@
+/* ============================================================
+   employees.css - أنماط وحدة الموظفين (مع دعم الفلاتر)
+   ============================================================ */
+
+.employees-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* ========== الهيدر ========== */
+.employees-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+.employees-header h2 {
+    margin: 0;
+    color: #2a5298;
+}
+
+.btn-add {
+    background: #28a745;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 30px;
+    text-decoration: none;
+    transition: 0.3s;
+    font-weight: 600;
+    display: inline-block;
+}
+.btn-add:hover {
+    background: #218838;
+    transform: translateY(-2px);
+}
+
+/* ========== بطاقات الإحصائيات ========== */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 18px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 20px;
+    padding: 18px 12px;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border 0.3s ease;
+    border-bottom: 4px solid #ccc;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    cursor: pointer;
+}
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+}
+
+/* البطاقة النشطة (المحددة كفلتر) */
+.stat-card.active-card {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    border: 2px solid #2a5298;
+}
+
+.stat-card .stat-icon {
+    font-size: 28px;
+    margin-bottom: 5px;
+    display: block;
+}
+.stat-card .stat-label {
+    font-size: 12px;
+    color: #6c757d;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.stat-card .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    margin-top: 6px;
+}
+
+/* ألوان البطاقات */
+.stat-card.total {
+    border-bottom-color: #2a5298;
+    background: linear-gradient(135deg, #f0f4ff, #ffffff);
+}
+.stat-card.permanent {
+    border-bottom-color: #28a745;
+    background: linear-gradient(135deg, #e8f5e9, #ffffff);
+}
+.stat-card.contract {
+    border-bottom-color: #ff9800;
+    background: linear-gradient(135deg, #fff3e0, #ffffff);
+}
+
+/* ========== عدد النتائج المعروضة ========== */
+.results-count {
+    margin-bottom: 15px;
+    font-size: 14px;
+    color: #666;
+}
+.results-count strong {
+    color: #2a5298;
+}
+
+/* ========== الفلاتر ========== */
+.filter-section {
+    background: white;
+    border-radius: 20px;
+    padding: 15px 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8f9fa;
+    padding: 5px 12px;
+    border-radius: 30px;
+    border: 1px solid #e9ecef;
+}
+.filter-group label {
+    font-weight: 600;
+    font-size: 13px;
+    color: #495057;
+}
+.filter-group input {
+    border: none;
+    background: transparent;
+    padding: 8px 5px;
+    border-radius: 20px;
+    outline: none;
+    font-size: 14px;
+    min-width: 150px;
+}
+.filter-group input:focus {
+    background: white;
+    box-shadow: 0 0 0 2px rgba(42,82,152,0.2);
+}
+
+.btn-filter {
+    background: #2a5298;
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 30px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.3s;
+}
+.btn-filter:hover {
+    background: #1e3c72;
+}
+
+.btn-reset {
+    background: #6c757d;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 30px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: 0.3s;
+}
+.btn-reset:hover {
+    background: #5a6268;
+}
+
+/* ========== الجدول ========== */
+.table-responsive {
+    overflow-x: auto;
+}
+
+.employees-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.05);
+    font-size: 14px;
+}
+
+.employees-table th {
+    background: #2a5298;
+    color: white;
+    padding: 14px 12px;
+    text-align: center;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.employees-table td {
+    padding: 12px;
+    text-align: center;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+}
+.employees-table tr:hover {
+    background: #f8f9fa;
+}
+.employees-table .text-center {
+    text-align: center;
+    padding: 30px;
+    color: #999;
+}
+
+/* ========== الأزرار ========== */
+.action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    justify-content: center;
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: 0.2s;
+    font-weight: 500;
+}
+.btn-edit {
+    background: #ffc107;
+    color: #333;
+}
+.btn-edit:hover {
+    background: #e0a800;
+}
+.btn-view {
+    background: #17a2b8;
+    color: white;
+}
+.btn-view:hover {
+    background: #138496;
+}
+.btn-delete {
+    background: #dc3545;
+    color: white;
+}
+.btn-delete:hover {
+    background: #c82333;
+}
+
+/* ========== مودال ========== */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+}
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-box {
+    background: white;
+    padding: 30px;
+    border-radius: 20px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    text-align: center;
+}
+.modal-box h3 {
+    margin-top: 0;
+    color: #dc3545;
+}
+.modal-box .text-muted {
+    color: #6c757d;
+    font-size: 14px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-top: 25px;
+}
+.modal-actions .btn-cancel {
+    background: #6c757d;
+    color: white;
+    padding: 10px 25px;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.2s;
+}
+.modal-actions .btn-cancel:hover {
+    background: #5a6268;
+}
+.modal-actions .btn-confirm-delete {
+    background: #dc3545;
+    color: white;
+    padding: 10px 25px;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: 0.2s;
+}
+.modal-actions .btn-confirm-delete:hover {
+    background: #c82333;
+}
+
+/* ========== استجابة للأجهزة الصغيرة ========== */
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .employees-header {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+    }
+    .filter-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .filter-group {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .filter-group input {
+        flex: 1;
+        min-width: 0;
+    }
+    .employees-table {
+        font-size: 12px;
+    }
+    .employees-table th,
+    .employees-table td {
+        padding: 8px 6px;
+    }
+    .action-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+    .modal-box {
+        width: 95%;
+        padding: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+}

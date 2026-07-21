@@ -1,0 +1,62 @@
+/* ============================================================
+   أنماط وحدة الميزانية الاجتماعية
+   ============================================================ */
+
+.budget-container { direction: rtl; max-width: 1400px; margin: 0 auto; padding: 20px; }
+.budget-header { background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px; }
+.budget-header h2 { margin: 0; }
+
+/* بطاقات الإحصائيات */
+.stats-grid { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
+.stat-card { background: white; border-radius: 20px; padding: 20px; text-align: center; flex: 1; min-width: 180px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-bottom: 4px solid; transition: transform 0.2s; }
+.stat-card:hover { transform: translateY(-5px); }
+.stat-card .stat-label { font-size: 14px; color: #666; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; margin: 10px 0; }
+.stat-card.remaining { border-bottom-color: #17a2b8; }
+.stat-card.expenses { border-bottom-color: #dc3545; }
+.stat-card.refunds { border-bottom-color: #ffc107; }
+.stat-card.loans { border-bottom-color: #2a5298; }
+.stat-card.grants { border-bottom-color: #28a745; }
+.stat-card.installments { border-bottom-color: #6c757d; }
+
+/* شريط التقدم */
+.progress-section { background: white; border-radius: 20px; padding: 20px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.progress-bar-container { background: #e9ecef; border-radius: 30px; height: 25px; overflow: hidden; }
+.progress-bar-fill { background: linear-gradient(90deg, #2a5298, #28a745); height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-size: 12px; font-weight: bold; border-radius: 30px; }
+
+/* الفلاتر */
+.filters { background: #f8f9fa; border-radius: 20px; padding: 15px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 5px; background: white; padding: 5px 10px; border-radius: 8px; border: 1px solid #ddd; }
+.filter-group label { font-weight: bold; margin: 0; }
+.filters select, .filters input, .filters button { padding: 8px 15px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; background: white; }
+.filters button { background: #2a5298; color: white; border: none; cursor: pointer; }
+
+/* الجداول */
+.data-table { width: 100%; border-collapse: collapse; background: white; margin-bottom: 20px; font-size: 14px; }
+.data-table th, .data-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+.data-table th { background: #2a5298; color: white; }
+.data-table .total-row { background: #ffd700; font-weight: bold; }
+.data-table .credit { color: #28a745; }
+.data-table .debit { color: #dc3545; }
+
+/* الرسوم البيانية */
+.chart-container { background: white; border-radius: 20px; padding: 20px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.chart-container canvas { max-height: 300px; width: 100% !important; }
+
+/* أزرار */
+.btn { padding: 8px 15px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; text-decoration: none; display: inline-block; cursor: pointer; transition: 0.2s; }
+.btn-primary { background: #2a5298; color: white; border: none; }
+.btn-primary:hover { background: #1e3c72; }
+.btn-success { background: #28a745; color: white; border: none; }
+.btn-success:hover { background: #218838; }
+.btn-warning { background: #ffc107; color: #000; border: none; }
+.btn-warning:hover { background: #e0a800; }
+.btn-danger { background: #dc3545; color: white; border: none; }
+.btn-danger:hover { background: #c82333; }
+.btn-sm { padding: 4px 12px; font-size: 12px; border-radius: 20px; }
+
+@media (max-width: 768px) {
+    .stats-grid { flex-direction: column; }
+    .stat-card { min-width: auto; }
+    .chart-container canvas { max-height: 200px; }
+}

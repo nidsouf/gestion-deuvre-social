@@ -367,11 +367,8 @@ include '../includes/header.php';
     <?php endif; ?>
 
     <div class="info-box">
-        <p><strong>💰 تسديد مستحقات سعدين للتجهير (هذا الشهر):</strong> <?= number_format($saadine_paid, 2) ?> دج</p>
-        <?php if($show_tri_total): ?>
-            <p><strong>📊 إجمالي الاقتطاع الثلاثي لسعدين للتجهير (آخر 3 أشهر):</strong> <?= number_format($saadine_tri_total, 2) ?> دج</p>
-        <?php endif; ?>
-    </div>
+    <p><strong>💰 تسديد مستحقات سعدين للتجهير (هذا الشهر):</strong> <?= number_format($saadine_paid, 2) ?> دج</p>
+</div>
 
     <form method="POST">
         <input type="hidden" name="session_number" value="<?= $session_number ?>">

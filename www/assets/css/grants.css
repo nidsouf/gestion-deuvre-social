@@ -1,0 +1,448 @@
+/* ============================================================
+   ملف الأنماط الموحد لجميع وحدات المنح
+   ============================================================ */
+
+/* ---------- الحاويات والعناوين ---------- */
+.grants-container {
+    direction: rtl;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+.grants-header {
+    background: linear-gradient(135deg, #6c3483, #9b59b6);
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+    margin-bottom: 20px;
+}
+.grants-header h2 { margin: 0; }
+
+/* ---------- الإحصائيات ---------- */
+.stats-grid {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+}
+.stat-card {
+    background: white;
+    border-radius: 20px;
+    padding: 20px;
+    text-align: center;
+    flex: 1;
+    min-width: 150px;
+    border-bottom: 3px solid;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+.stat-card .number { font-size: 28px; font-weight: 700; }
+.stat-card .label { font-size: 14px; color: #666; }
+.stat-card.total { border-bottom-color: #6c3483; }
+.stat-card.active { border-bottom-color: #28a745; }
+.stat-card.amount { border-bottom-color: #ff9800; }
+.stat-card.grants { border-bottom-color: #9c27b0; }
+
+/* ---------- نموذج الإضافة ---------- */
+.form-card {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 20px;
+    margin-bottom: 30px;
+}
+.form-card h3 { margin-top: 0; }
+.form-group { margin-bottom: 15px; }
+.form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+    font-family: inherit;
+}
+.form-group textarea { resize: vertical; min-height: 60px; }
+
+/* ---------- الفلاتر ---------- */
+.filters {
+    background: #f8f9fa;
+    border-radius: 20px;
+    padding: 15px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: white;
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+.filter-group label { font-weight: bold; margin: 0; }
+
+/* ---------- الأزرار العامة ---------- */
+.btn {
+    padding: 8px 15px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.btn-primary { background: #2a5298; color: white; border: none; }
+.btn-primary:hover { background: #1e3c72; }
+.btn-secondary { background: #6c757d; color: white; border: none; }
+.btn-secondary:hover { background: #5a6268; }
+.btn-success { background: #28a745; color: white; border: none; }
+.btn-success:hover { background: #218838; }
+.btn-danger { background: #dc3545; color: white; border: none; }
+.btn-danger:hover { background: #c82333; }
+.btn-warning { background: #ff9800; color: white; border: none; }
+.btn-warning:hover { background: #e68900; }
+.btn-sm { padding: 4px 12px; font-size: 12px; border-radius: 20px; }
+
+/* ---------- أزرار الإجراءات ---------- */
+.btn-edit {
+    background: #ffc107;
+    color: #000;
+    padding: 4px 12px;
+    border-radius: 20px;
+    text-decoration: none;
+    font-size: 12px;
+    display: inline-block;
+    margin: 2px;
+    transition: 0.2s;
+}
+.btn-edit:hover { background: #e0a800; }
+.btn-delete {
+    background: #dc3545;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-block;
+    margin: 2px;
+    transition: 0.2s;
+}
+.btn-delete:hover { background: #c82333; }
+.btn-view {
+    background: #17a2b8;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    text-decoration: none;
+    font-size: 12px;
+    display: inline-block;
+    margin: 2px;
+    transition: 0.2s;
+}
+.btn-view:hover { background: #138496; }
+.btn-update {
+    background: #ff9800;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+.btn-update:hover { background: #e68900; }
+.btn-recalc {
+    background: #17a2b8;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+.btn-recalc:hover { background: #138496; }
+.btn-pay {
+    background: #28a745;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+.btn-pay:hover { background: #218838; }
+.btn-pay-disabled {
+    background: #6c757d;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: none;
+    font-size: 12px;
+    cursor: not-allowed;
+}
+.action-buttons {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* ---------- الجداول ---------- */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+.data-table th,
+.data-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+.data-table th {
+    background: #6c3483;
+    color: white;
+    font-weight: 600;
+}
+.data-table tr:nth-child(even) { background: #f8f9fa; }
+.data-table tr:hover { background: #f1f3f5; }
+.data-table .total-row {
+    background: #ffd700;
+    font-weight: bold;
+}
+.data-table .paid-row { background: #f0f8ff; }
+.data-table .paid-row td { background: #f0f8ff; }
+.data-table .outdated-row { background: #fff3cd; }
+.data-table .outdated-row td { background: #fff3cd; }
+.data-table .djezzy-row { background: #f8f0ff; }
+.data-table .djezzy-row td { background: #f8f0ff; }
+.table-wrapper { overflow-x: auto; }
+
+/* ---------- البادجات (Badges) ---------- */
+.badge-fixed {
+    background: #28a745;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    font-size: 12px;
+}
+.badge-percentage {
+    background: #ff9800;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    font-size: 12px;
+}
+.badge-loan {
+    background: #ff9800;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    font-size: 12px;
+}
+.badge-normal {
+    background: #28a745;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    font-size: 12px;
+}
+.badge-warning {
+    background: #ffc107;
+    color: #333;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    font-size: 12px;
+}
+.badge-djezzy {
+    background: #6f42c1;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+    font-size: 12px;
+}
+.badge-active {
+    background: #d4edda;
+    color: #155724;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+}
+.badge-paid {
+    background: #cce5ff;
+    color: #004085;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+}
+.badge-postponed {
+    background: #ffc107;
+    color: #333;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+}
+.badge-expired {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+}
+.badge-expiring {
+    background: #fff3cd;
+    color: #856404;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+}
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    display: inline-block;
+    font-weight: 600;
+}
+.status-active { background: #d4edda; color: #155724; }
+.status-expiring { background: #fff3cd; color: #856404; }
+.status-expired { background: #f8d7da; color: #721c24; }
+.status-paid { background: #cce5ff; color: #004085; }
+
+/* ---------- الأقسام والعناوين ---------- */
+.section-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin: 25px 0 10px;
+    padding-right: 10px;
+    border-right: 4px solid #6c3483;
+}
+
+/* ---------- مودال ---------- */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal-box {
+    background: white;
+    padding: 30px;
+    border-radius: 20px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    text-align: center;
+}
+.modal-box h3 { margin-top: 0; color: #dc3545; }
+.modal-box .actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 20px;
+}
+.btn-confirm {
+    background: #dc3545;
+    color: white;
+    padding: 10px 25px;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.btn-confirm:hover { background: #c82333; }
+.btn-cancel-modal {
+    background: #6c757d;
+    color: white;
+    padding: 10px 25px;
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.btn-cancel-modal:hover { background: #5a6268; }
+
+/* ---------- Toast ---------- */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 99999;
+    max-width: 400px;
+}
+.toast-item {
+    padding: 15px 20px;
+    border-radius: 10px;
+    color: white;
+    font-weight: bold;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    animation: slideIn 0.5s;
+}
+.toast-success { background: #28a745; }
+.toast-error { background: #dc3545; }
+.toast-warning { background: #ffc107; color: #333; }
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* ---------- وسيلة الإيضاح ---------- */
+.legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+.legend-color {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+/* ---------- استجابة للأجهزة الصغيرة ---------- */
+@media (max-width: 768px) {
+    .grants-container { padding: 10px; }
+    .stats-grid { flex-direction: column; }
+    .stat-card { min-width: auto; }
+    .data-table { font-size: 12px; }
+    .data-table th,
+    .data-table td { padding: 5px; }
+    .action-buttons { flex-direction: column; align-items: center; }
+    .filter-group { width: 100%; }
+    .filters { flex-direction: column; align-items: stretch; }
+    .modal-box { width: 95%; padding: 20px; }
+}

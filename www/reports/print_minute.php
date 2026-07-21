@@ -1,11 +1,30 @@
 <?php
+ob_start(); // منع أي مخرجات قبل الأوان
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit;
 }
+ob_end_clean(); // مسح أي مخرجات عالقة قبل إرسال الهيدرز
+
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+
+// ============================================================
+// معالجة المعاملات
+// ============================================================
+$month = isset($_GET['month']) ? (int)$_GET['month'] : date('m');
+$year = isset($_GET['year']) ? (int)$_GET['year'] : date('Y');
+
+// تصحيح القيم غير الصالحة
+if ($month < 1 || $month > 12) {
+    $month = date('m');
+}
+if ($year < 2000 || $year > 2100) {
+    $year = date('Y');
+}
+
+// ... باقي الكود ...
 
 // ============================================================
 // دوال مساعدة للتواريخ
@@ -206,13 +225,12 @@ if ($show_cheques) {
 if ($show_cheques) {
     $total_minute_amount = $totalGrants + $totalLoans 
                          + ($show_djezzy ? $djezzy_monthly_total : 0) 
-                         + $saadine_tri_total 
                          + $totalHonorValue 
                          + $total_cheques;
 } else {
     $total_minute_amount = $totalGrants + $totalLoans 
                          + ($show_djezzy ? $djezzy_monthly_total : 0) 
-                         + $saadine_paid + $saadine_tri_total 
+                         + $saadine_paid  
                          + $totalHonorValue;
 }
 
@@ -343,9 +361,9 @@ include '../includes/header.php';
         <li>إجمالي الاقتطاعات الشهرية لجيزي.</li>
         <?php endif; ?>
         <li>تسديد مستحقات سعدين للتجهير.</li>
-        <?php if($show_tri_total): ?>
-        <li>مراجعة إجمالي الاقتطاع الثلاثي لفائدة سعدين للتجهير.</li>
-        <?php endif; ?>
+        <?php if (!$show_cheques): ?>
+    <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
+    <?php endif; ?>
         <?php if (!empty($honorees)): ?>
         <li>الاطلاع على قائمة المكرمين في عيد العمال للسنة <?= $minute['honorees_year'] ?>.</li>
         <?php endif; ?>
@@ -405,11 +423,9 @@ include '../includes/header.php';
         <?php endif; ?>
         <li>إجمالي المبلغ المستحق لجيزي: <strong>28,300.00 دج</strong></li>
         <?php if (!$show_cheques): ?>
-        <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
-        <?php endif; ?>
-        <?php if($show_tri_total): ?>
-        <li>إجمالي الاقتطاع الثلاثي لسعدين للتجهير (آخر 3 أشهر): <strong><?= number_format($saadine_tri_total, 2) ?> دج</strong></li>
-        <?php endif; ?>
+    <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
+    <?php endif; ?>
+        
     </ul>
 
     <!-- الشيكات -->

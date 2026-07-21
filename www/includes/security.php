@@ -8,7 +8,11 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-
+// في أعلى security.php، بعد session_start()
+if (ob_get_level()) {
+    ob_end_clean(); // تنظيف أي مخرجات عالقة
+}
+ob_start(); // بدء التخزين المؤقت
 // =============================================
 // 1. CSRF Protection (الحماية من هجمات التزوير)
 // =============================================
@@ -311,4 +315,5 @@ function sendSecurityHeaders() {
     header("Referrer-Policy: strict-origin-when-cross-origin");
     header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; font-src 'self' https://cdnjs.cloudflare.com;");
 }
+ob_end_flush();
 ?>

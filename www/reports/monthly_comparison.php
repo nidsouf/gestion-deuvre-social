@@ -1,4 +1,12 @@
 <?php
+/**
+ * monthly_comparison.php - مقارنة التقرير الشهري بين شهرين
+ * تم التحسين:
+ * - إضافة خيار عرض الأقساط المدفوعة
+ * - تحسين الأداء بجلب early_payments دفعة واحدة
+ * - استخدام source_id في المفتاح المركب
+ * - توحيد حساب فرق عدد الموظفين
+ */
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -6,6 +14,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/common_helpers.php';
 
 if (!function_exists('getMonthNameArabic')) {
     function getMonthNameArabic($month) {
@@ -23,21 +32,24 @@ $year2 = isset($_GET['year2']) ? (int)$_GET['year2'] : date('Y');
 $month2 = isset($_GET['month2']) ? (int)$_GET['month2'] : date('m') - 1;
 if ($month2 < 1) { $month2 = 12; $year2--; }
 $source_id = isset($_GET['source_id']) ? (int)$_GET['source_id'] : 0;
+$show_paid = isset($_GET['show_paid']) ? (int)$_GET['show_paid'] : 0;
 $print = isset($_GET['print']) && $_GET['print'] == '1';
 
 // ============================================================
-// دالة جلب بيانات شهر معين (بمفتاح مركب للموظف+المصدر)
+// دالة جلب بيانات شهر معين (مع خيار عرض المدفوعة)
 // ============================================================
-function getMonthData($pdo, $year, $month, $source_id = 0) {
+function getMonthData($pdo, $year, $month, $source_id = 0, $include_paid = false) {
     $sql = "SELECT 
                 mi.amount as monthly_amount,
+                mi.is_paid,
                 e.id as employee_id,
                 e.name as employee_name,
                 e.category,
+                s.id as source_id,
                 s.name as source_name,
                 d.is_loan,
                 d.credit_balance,
-                (SELECT MIN(ep.payment_date) FROM early_payments ep WHERE ep.deduction_id = d.id AND ep.is_reversed = 0) as first_early_payment_date,
+                d.id as deduction_id,
                 'regular' as type
             FROM monthly_installments mi
             JOIN employees e ON mi.employee_id = e.id
@@ -45,16 +57,35 @@ function getMonthData($pdo, $year, $month, $source_id = 0) {
             JOIN deductions d ON mi.deduction_id = d.id
             WHERE mi.year = :year AND mi.month = :month
               AND mi.is_postponed = 0
-              AND mi.is_paid = 0
             ";
+    // إضافة شرط is_paid فقط إذا لم نطلب عرض المدفوعة
+    if (!$include_paid) {
+        $sql .= " AND mi.is_paid = 0";
+    }
     $params = [':year' => $year, ':month' => $month];
     if ($source_id > 0) { $sql .= " AND mi.source_id = :source_id"; $params[':source_id'] = $source_id; }
     $sql .= " ORDER BY e.name ASC, s.name ASC";
     
     $stmt = $pdo->prepare($sql);
-    foreach ($params as $k => $v) $stmt->bindValue($k, $v);
-    $stmt->execute();
+    $stmt->execute($params);
     $items = $stmt->fetchAll();
+    
+    // جلب جميع الدفعات المقدمة لهذه الاقتطاعات دفعة واحدة (تحسين الأداء)
+    $deductionIds = array_column($items, 'deduction_id');
+    $earlyPayments = [];
+    if (!empty($deductionIds)) {
+        $placeholders = implode(',', array_fill(0, count($deductionIds), '?'));
+        $stmtEarly = $pdo->prepare("
+            SELECT deduction_id, MIN(payment_date) as first_payment_date
+            FROM early_payments 
+            WHERE deduction_id IN ($placeholders) AND is_reversed = 0
+            GROUP BY deduction_id
+        ");
+        $stmtEarly->execute($deductionIds);
+        while ($row = $stmtEarly->fetch()) {
+            $earlyPayments[$row['deduction_id']] = $row['first_payment_date'];
+        }
+    }
     
     $report_ym = sprintf("%04d-%02d", $year, $month);
     $result = [];
@@ -67,7 +98,7 @@ function getMonthData($pdo, $year, $month, $source_id = 0) {
     
     foreach ($items as $it) {
         $amount = $it['monthly_amount'];
-        $pay_date = $it['first_early_payment_date'];
+        $pay_date = $earlyPayments[$it['deduction_id']] ?? null;
         if (!empty($pay_date)) {
             $pay_ym = substr($pay_date, 0, 7);
             if ($pay_ym == $report_ym) {
@@ -80,22 +111,38 @@ function getMonthData($pdo, $year, $month, $source_id = 0) {
                 }
             }
         }
-        // مفتاح مركب: employee_id|source_name
-        $key = $it['employee_id'] . '|' . $it['source_name'];
-        $result[$key] = [
-            'employee_id' => $it['employee_id'],
-            'employee_name' => $it['employee_name'],
-            'category' => $it['category'],
-            'source_name' => $it['source_name'],
-            'is_loan' => $it['is_loan'],
-            'amount' => $amount,
-            'monthly_amount' => $it['monthly_amount'],
-            'credit_balance' => $it['credit_balance'],
-        ];
+        // مفتاح مركب: employee_id|source_id
+        $key = $it['employee_id'] . '|' . $it['source_id'];
+        // تجميع الأقساط المتعددة لنفس الموظف والمصدر (إن وجدت)
+        if (!isset($result[$key])) {
+            $result[$key] = [
+                'employee_id' => $it['employee_id'],
+                'employee_name' => $it['employee_name'],
+                'category' => $it['category'],
+                'source_id' => $it['source_id'],
+                'source_name' => $it['source_name'],
+                'is_loan' => $it['is_loan'],
+                'amount' => $amount,
+                'monthly_amount' => $it['monthly_amount'],
+                'credit_balance' => $it['credit_balance'],
+                'is_paid' => $it['is_paid'],
+            ];
+        } else {
+            // جمع المبالغ (حالة نادرة ولكنها آمنة)
+            $result[$key]['amount'] += $amount;
+            // إذا كان أحد الأقساط مدفوعاً، نعتبر الكل مدفوعاً (لأغراض التصنيف)
+            if ($it['is_paid']) {
+                $result[$key]['is_paid'] = 1;
+            }
+        }
         $total += $amount;
         $count++;
-        if ($it['category'] == 'Permanent') $permanent += $amount;
-        else $contract += $amount;
+        $isPermanent = (strtolower(trim($it['category'])) === 'permanent');
+        if ($isPermanent) {
+            $permanent += $amount;
+        } else {
+            $contract += $amount;
+        }
         if ($it['is_loan']) $loanTotal += $amount;
         else $normalTotal += $amount;
     }
@@ -117,8 +164,8 @@ function getMonthData($pdo, $year, $month, $source_id = 0) {
 // ============================================================
 // جلب بيانات الشهرين
 // ============================================================
-$data1 = getMonthData($pdo, $year1, $month1, $source_id);
-$data2 = getMonthData($pdo, $year2, $month2, $source_id);
+$data1 = getMonthData($pdo, $year1, $month1, $source_id, (bool)$show_paid);
+$data2 = getMonthData($pdo, $year2, $month2, $source_id, (bool)$show_paid);
 
 // ============================================================
 // بناء خريطة المقارنة (بالمفتاح المركب)
@@ -128,28 +175,34 @@ foreach ($data1['data'] as $key => $info) {
     $comparison[$key] = [
         'employee_id' => $info['employee_id'],
         'employee_name' => $info['employee_name'],
+        'source_id' => $info['source_id'],
         'source_name' => $info['source_name'],
         'category' => $info['category'],
         'amount1' => $info['amount'],
         'amount2' => 0,
         'exists1' => true,
         'exists2' => false,
+        'is_paid1' => $info['is_paid'] ?? 0,
     ];
 }
 foreach ($data2['data'] as $key => $info) {
     if (isset($comparison[$key])) {
         $comparison[$key]['amount2'] = $info['amount'];
         $comparison[$key]['exists2'] = true;
+        $comparison[$key]['is_paid2'] = $info['is_paid'] ?? 0;
     } else {
         $comparison[$key] = [
             'employee_id' => $info['employee_id'],
             'employee_name' => $info['employee_name'],
+            'source_id' => $info['source_id'],
             'source_name' => $info['source_name'],
             'category' => $info['category'],
             'amount1' => 0,
             'amount2' => $info['amount'],
             'exists1' => false,
             'exists2' => true,
+            'is_paid1' => 0,
+            'is_paid2' => $info['is_paid'] ?? 0,
         ];
     }
 }
@@ -180,14 +233,27 @@ foreach ($comparison as &$emp) {
 }
 unset($emp);
 
-// حساب الإجماليات للفروقات
+// حساب الإجماليات للفروقات (موحدة)
 $totalDiff = $data2['total'] - $data1['total'];
-$totalDiffPercent = $data1['total'] > 0 ? round(($totalDiff / $data1['total']) * 100, 2) : 0;
+$totalDiffPercent = $data1['total'] > 0 
+    ? round(($totalDiff / $data1['total']) * 100, 2) 
+    : ($data2['total'] > 0 ? 100 : 0);
+
+// فرق عدد الموظفين (موحد بين العرض والطباعة)
+$countDiff = $data2['count'] - $data1['count'];
+$countDiffPercent = $data1['count'] > 0 ? round(($countDiff / $data1['count']) * 100, 2) : ($data2['count'] > 0 ? 100 : 0);
 
 // ============================================================
 // وضع الطباعة
 // ============================================================
 if ($print) {
+    // جلب اسم المصدر باستخدام Prepared Statement
+    $sourceName = '';
+    if ($source_id > 0) {
+        $stmt = $pdo->prepare("SELECT name FROM sources WHERE id = ?");
+        $stmt->execute([$source_id]);
+        $sourceName = $stmt->fetchColumn();
+    }
     header('Content-Type: text/html; charset=utf-8');
     ?>
     <!DOCTYPE html>
@@ -223,20 +289,23 @@ if ($print) {
         </div>
         
         <div class="subtitle">
-            <strong><?= $data1['label'] ?></strong> مقابل <strong><?= $data2['label'] ?></strong>
-            <?php if ($source_id > 0): ?>
-                <br>المصدر: <?= htmlspecialchars($pdo->query("SELECT name FROM sources WHERE id=$source_id")->fetchColumn()) ?>
+            <strong><?= htmlspecialchars($data1['label']) ?></strong> مقابل <strong><?= htmlspecialchars($data2['label']) ?></strong>
+            <?php if ($source_id > 0 && $sourceName): ?>
+                <br>المصدر: <?= htmlspecialchars($sourceName) ?>
+            <?php endif; ?>
+            <?php if ($show_paid): ?>
+                <br><span style="color:#17a2b8;">(تشمل الأقساط المدفوعة)</span>
             <?php endif; ?>
         </div>
 
         <!-- ملخص المقارنة -->
         <div class="summary-box">
             <table>
-                <tr><th>المؤشر</th><th><?= $data1['label'] ?></th><th><?= $data2['label'] ?></th><th>الفرق</th><th>نسبة التغير</th></tr>
+                <tr><th>المؤشر</th><th><?= htmlspecialchars($data1['label']) ?></th><th><?= htmlspecialchars($data2['label']) ?></th><th>الفرق</th><th>نسبة التغير</th></tr>
                 <tr><td>الإجمالي (دج)</td><td><?= number_format($data1['total'],2) ?></td><td><?= number_format($data2['total'],2) ?></td><td class="<?= $totalDiff>=0?'positive':'negative' ?>"><?= number_format($totalDiff,2) ?></td><td><?= $totalDiffPercent ?>%</td></tr>
-                <tr><td>عدد الموظفين</td><td><?= $data1['count'] ?></td><td><?= $data2['count'] ?></td><td><?= $data1['count'] - $data2['count'] ?></td><td><?= $data2['count'] > 0 ? round((($data1['count'] - $data2['count']) / $data2['count']) * 100, 2) : 0 ?>%</td></tr>
-                <tr><td>الدائمون (دج)</td><td><?= number_format($data1['permanent'],2) ?></td><td><?= number_format($data2['permanent'],2) ?></td><td class="<?= ($data2['permanent']-$data1['permanent'])>=0?'positive':'negative' ?>"><?= number_format($data2['permanent']-$data1['permanent'],2) ?></td><td><?= $data1['permanent']>0?round((($data2['permanent']-$data1['permanent'])/$data1['permanent'])*100,2):0 ?>%</td></tr>
-                <tr><td>المتعاقدون (دج)</td><td><?= number_format($data1['contract'],2) ?></td><td><?= number_format($data2['contract'],2) ?></td><td class="<?= ($data2['contract']-$data1['contract'])>=0?'positive':'negative' ?>"><?= number_format($data2['contract']-$data1['contract'],2) ?></td><td><?= $data1['contract']>0?round((($data2['contract']-$data1['contract'])/$data1['contract'])*100,2):0 ?>%</td></tr>
+                <tr><td>عدد الموظفين</td><td><?= $data1['count'] ?></td><td><?= $data2['count'] ?></td><td><?= $countDiff ?></td><td><?= $countDiffPercent ?>%</td></tr>
+                <tr><td>الدائمون (دج)</td><td><?= number_format($data1['permanent'],2) ?></td><td><?= number_format($data2['permanent'],2) ?></td><td class="<?= ($data2['permanent']-$data1['permanent'])>=0?'positive':'negative' ?>"><?= number_format($data2['permanent']-$data1['permanent'],2) ?></td><td><?= $data1['permanent']>0?round((($data2['permanent']-$data1['permanent'])/$data1['permanent'])*100,2):($data2['permanent']>0?100:0) ?>%</td></tr>
+                <tr><td>المتعاقدون (دج)</td><td><?= number_format($data1['contract'],2) ?></td><td><?= number_format($data2['contract'],2) ?></td><td class="<?= ($data2['contract']-$data1['contract'])>=0?'positive':'negative' ?>"><?= number_format($data2['contract']-$data1['contract'],2) ?></td><td><?= $data1['contract']>0?round((($data2['contract']-$data1['contract'])/$data1['contract'])*100,2):($data2['contract']>0?100:0) ?>%</td></tr>
             </table>
         </div>
 
@@ -244,7 +313,7 @@ if ($print) {
         <div class="table-container">
             <!-- الجدول الأول -->
             <div class="table-wrapper">
-                <h4 style="text-align:center;">📋 <?= $data1['label'] ?></h4>
+                <h4 style="text-align:center;">📋 <?= htmlspecialchars($data1['label']) ?></h4>
                 <table>
                     <thead><tr><th>#</th><th>الموظف</th><th>المصدر</th><th>المبلغ (دج)</th><th>الفرق عن الشهر الآخر</th><th>الملاحظة</th></tr></thead>
                     <tbody>
@@ -278,7 +347,7 @@ if ($print) {
 
             <!-- الجدول الثاني -->
             <div class="table-wrapper">
-                <h4 style="text-align:center;">📋 <?= $data2['label'] ?></h4>
+                <h4 style="text-align:center;">📋 <?= htmlspecialchars($data2['label']) ?></h4>
                 <table>
                     <thead><tr><th>#</th><th>الموظف</th><th>المصدر</th><th>المبلغ (دج)</th><th>الفرق عن الشهر الآخر</th><th>الملاحظة</th></tr></thead>
                     <tbody>
@@ -334,12 +403,12 @@ $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll()
     .filters select, .filters button, .filters a { padding: 8px 15px; border-radius: 8px; border: 1px solid #ccc; font-size: 14px; text-decoration: none; display: inline-block; cursor: pointer; }
     .btn-primary { background: #2a5298; color: white; border: none; }
     .btn-success { background: #28a745; color: white; border: none; }
+    .btn-secondary { background: #6c757d; color: white; border: none; }
     
     .table { width: 100%; border-collapse: collapse; font-size: 14px; }
     .table th, .table td { border: 1px solid #ddd; padding: 10px; text-align: center; }
     .table th { background: #2a5298; color: white; }
     
-    /* ألوان التمييز */
     .positive { background: #d4edda !important; }
     .positive td { background: #d4edda !important; }
     .negative { background: #f8d7da !important; }
@@ -401,20 +470,27 @@ $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll()
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div class="filter-group">
+                <label>عرض المدفوعة:</label>
+                <select name="show_paid">
+                    <option value="0" <?= $show_paid==0?'selected':'' ?>>إخفاء المدفوعة</option>
+                    <option value="1" <?= $show_paid==1?'selected':'' ?>>عرض الكل (بما فيها المدفوعة)</option>
+                </select>
+            </div>
             <button type="submit" class="btn-primary">🔍 عرض</button>
-            <a href="?year1=<?=$year1?>&month1=<?=$month1?>&year2=<?=$year2?>&month2=<?=$month2?>&source_id=<?=$source_id?>&print=1" target="_blank" class="btn-success">🖨️ طباعة</a>
+            <a href="?year1=<?=$year1?>&month1=<?=$month1?>&year2=<?=$year2?>&month2=<?=$month2?>&source_id=<?=$source_id?>&show_paid=<?=$show_paid?>&print=1" target="_blank" class="btn-success">🖨️ طباعة</a>
+            <a href="?year1=<?=$year1?>&month1=<?=$month1?>&year2=<?=$year2?>&month2=<?=$month2?>&source_id=<?=$source_id?>&show_paid=<?=$show_paid?>" class="btn-secondary">🔄 إعادة تعيين</a>
         </form>
     </div>
 
     <?php if (empty($data1['data']) && empty($data2['data'])): ?>
         <div style="background:#f8d7da;padding:20px;text-align:center;">⚠️ لا توجد بيانات للشهرين المحددين</div>
     <?php else: ?>
-        <!-- ملخص المقارنة -->
         <div class="card">
             <div class="card-title">📈 ملخص المقارنة</div>
             <div class="summary-box">
                 <table class="table">
-                    <thead><tr><th>المؤشر</th><th><?= $data1['label'] ?></th><th><?= $data2['label'] ?></th><th>الفرق</th><th>نسبة التغير</th></tr></thead>
+                    <thead><tr><th>المؤشر</th><th><?= htmlspecialchars($data1['label']) ?></th><th><?= htmlspecialchars($data2['label']) ?></th><th>الفرق</th><th>نسبة التغير</th></tr></thead>
                     <tbody>
                         <tr>
                             <td><strong>الإجمالي العام (دج)</strong></td>
@@ -427,33 +503,32 @@ $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll()
                             <td><strong>عدد الموظفين</strong></td>
                             <td><?= $data1['count'] ?></td>
                             <td><?= $data2['count'] ?></td>
-                            <td><?= $data2['count'] - $data1['count'] ?></td>
-                            <td><?= $data1['count'] > 0 ? round((($data2['count'] - $data1['count']) / $data1['count']) * 100, 2) : 0 ?>%</td>
+                            <td><?= $countDiff ?></td>
+                            <td><?= $countDiffPercent ?>%</td>
                         </tr>
                         <tr>
                             <td><strong>الدائمون (دج)</strong></td>
                             <td><?= number_format($data1['permanent'], 2) ?></td>
                             <td><?= number_format($data2['permanent'], 2) ?></td>
                             <td class="<?= ($data2['permanent']-$data1['permanent']) >= 0 ? 'positive' : 'negative' ?>"><?= number_format($data2['permanent'] - $data1['permanent'], 2) ?></td>
-                            <td><?= $data1['permanent'] > 0 ? round((($data2['permanent'] - $data1['permanent']) / $data1['permanent']) * 100, 2) : 0 ?>%</td>
+                            <td><?= $data1['permanent'] > 0 ? round((($data2['permanent'] - $data1['permanent']) / $data1['permanent']) * 100, 2) : ($data2['permanent'] > 0 ? 100 : 0) ?>%</td>
                         </tr>
                         <tr>
                             <td><strong>المتعاقدون (دج)</strong></td>
                             <td><?= number_format($data1['contract'], 2) ?></td>
                             <td><?= number_format($data2['contract'], 2) ?></td>
                             <td class="<?= ($data2['contract']-$data1['contract']) >= 0 ? 'positive' : 'negative' ?>"><?= number_format($data2['contract'] - $data1['contract'], 2) ?></td>
-                            <td><?= $data1['contract'] > 0 ? round((($data2['contract'] - $data1['contract']) / $data1['contract']) * 100, 2) : 0 ?>%</td>
+                            <td><?= $data1['contract'] > 0 ? round((($data2['contract'] - $data1['contract']) / $data1['contract']) * 100, 2) : ($data2['contract'] > 0 ? 100 : 0) ?>%</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- جدولين منفصلين -->
         <div class="table-container">
             <!-- الجدول الأول -->
             <div class="table-wrapper">
-                <h4>📋 <?= $data1['label'] ?></h4>
+                <h4>📋 <?= htmlspecialchars($data1['label']) ?></h4>
                 <table class="table">
                     <thead>
                         <tr>
@@ -497,7 +572,7 @@ $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll()
 
             <!-- الجدول الثاني -->
             <div class="table-wrapper">
-                <h4>📋 <?= $data2['label'] ?></h4>
+                <h4>📋 <?= htmlspecialchars($data2['label']) ?></h4>
                 <table class="table">
                     <thead>
                         <tr>
@@ -540,7 +615,6 @@ $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll()
             </div>
         </div>
 
-        <!-- وسيلة إيضاح الألوان -->
         <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:20px; padding:15px; background:#f8f9fa; border-radius:10px;">
             <span><span style="background:#d4edda; padding:5px 10px; border-radius:5px;">🟢 زيادة</span></span>
             <span><span style="background:#f8d7da; padding:5px 10px; border-radius:5px;">🔴 نقصان</span></span>

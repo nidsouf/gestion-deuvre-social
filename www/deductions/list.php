@@ -1,6 +1,9 @@
 <?php
 /**
- * deductions/list.php - قائمة الاقتطاعات
+ * deductions/list.php - قائمة الاقتطاعات (محسّنة)
+ * - البطاقات ملونة وجذابة مثل لوحة الميزانية
+ * - النقر على البطاقة يفلتر الجدول تلقائياً
+ * - العرض الافتراضي: النشط فقط
  */
 ob_start();
 session_start();
@@ -8,8 +11,9 @@ require_once '../includes/auth_check.php';
 require_once '../config/database.php';
 require_once '../includes/security.php';
 require_once '../includes/functions.php';
+require_once 'helpers.php';
 
-// ========== تعريف دالة safeFormatDate محلياً (حتى تُضاف إلى functions.php) ==========
+// ========== تعريف safeFormatDate ==========
 if (!function_exists('safeFormatDate')) {
     function safeFormatDate($date) {
         if (empty($date) || $date === '0000-00-00' || $date === '1970-01-01') return '—';
@@ -17,57 +21,44 @@ if (!function_exists('safeFormatDate')) {
     }
 }
 
+// ========== المعاملات ==========
 $search = isset($_GET['search']) ? sanitizeInput($_GET['search']) : '';
 $source_filter = isset($_GET['source']) ? (int)$_GET['source'] : 0;
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : 'active'; // الافتراضي: نشط
 
 $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll();
 
-$sql = "
-    SELECT 
-        d.id, e.name as employee_name, s.name as source_name,
-        d.monthly_amount, d.total_months, d.start_date, d.end_date, d.is_loan, d.credit_balance, d.grant_date,
-        CASE 
-            WHEN d.end_date < date('now') THEN 'منتهي'
-            WHEN d.end_date < date('now', '+30 days') THEN 'ينتهي قريباً'
-            ELSE 'نشط'
-        END as status
-    FROM deductions d
-    JOIN employees e ON d.employee_id = e.id
-    JOIN sources s ON d.source_id = s.id
-    WHERE 1=1
-";
+// ========== جلب جميع الاقتطاعات (للإحصائيات والفلترة) ==========
+$allDeductions = getDeductionsList($pdo, ['search' => $search], 1000, 0);
 
-$params = [];
-if ($search) {
-    $sql .= " AND e.name LIKE :search";
-    $params[':search'] = "%$search%";
+// ========== تطبيق فلتر الحالة يدوياً ==========
+if ($status_filter === 'active') {
+    $deductions = array_values(array_filter($allDeductions, fn($d) => $d['status'] === 'نشط'));
+} elseif ($status_filter === 'expired') {
+    $deductions = array_values(array_filter($allDeductions, fn($d) => $d['status'] === 'منتهي'));
+} elseif ($status_filter === 'expiring') {
+    $deductions = array_values(array_filter($allDeductions, fn($d) => $d['status'] === 'ينتهي قريباً'));
+} elseif ($status_filter === 'loan') {
+    // السلف النشطة فقط (is_loan = 1 و status = نشط)
+    $deductions = array_values(array_filter($allDeductions, fn($d) => $d['is_loan'] == 1 && $d['status'] === 'نشط'));
+} else { // all أو أي قيمة أخرى
+    $deductions = $allDeductions;
 }
+
+// ========== فلتر المصدر (إذا كان محدداً) ==========
 if ($source_filter > 0) {
-    $sql .= " AND d.source_id = :source_id";
-    $params[':source_id'] = $source_filter;
+    $deductions = array_values(array_filter($deductions, fn($d) => $d['source_id'] == $source_filter));
 }
-if ($status_filter == 'active') {
-    $sql .= " AND d.end_date >= date('now')";
-} elseif ($status_filter == 'expired') {
-    $sql .= " AND d.end_date < date('now')";
-} elseif ($status_filter == 'expiring') {
-    $sql .= " AND d.end_date BETWEEN date('now') AND date('now', '+30 days')";
-}
-$sql .= " ORDER BY d.id DESC";
 
-$stmt = $pdo->prepare($sql);
-foreach ($params as $key => $value) {
-    $stmt->bindValue($key, $value);
-}
-$stmt->execute();
-$deductions = $stmt->fetchAll();
+// ========== الإحصائيات ==========
+$totalAll = count($allDeductions);
+$totalActive = count(array_filter($allDeductions, fn($d) => $d['status'] === 'نشط'));
+$totalExpiring = count(array_filter($allDeductions, fn($d) => $d['status'] === 'ينتهي قريباً'));
+$totalExpired = count(array_filter($allDeductions, fn($d) => $d['status'] === 'منتهي'));
+$totalLoans = count(array_filter($allDeductions, fn($d) => $d['is_loan'] == 1 && $d['status'] === 'نشط'));
+$totalMonthlyAmount = array_sum(array_column($allDeductions, 'monthly_amount'));
 
-$totalAll = count($deductions);
-$totalActive = count(array_filter($deductions, fn($d) => $d['status'] == 'نشط'));
-$totalExpiring = count(array_filter($deductions, fn($d) => $d['status'] == 'ينتهي قريباً'));
-$totalExpired = count(array_filter($deductions, fn($d) => $d['status'] == 'منتهي'));
-
+// ========== التسديد المقدم ==========
 $earlyMap = [];
 $stmtEarly = $pdo->query("SELECT deduction_id, id FROM early_payments WHERE is_reversed = 0");
 while ($row = $stmtEarly->fetch()) {
@@ -77,96 +68,113 @@ while ($row = $stmtEarly->fetch()) {
 $csrf_token = generateCSRFToken();
 include '../includes/header.php';
 ?>
+<link rel="stylesheet" href="../assets/css/deductions.css">
 
-<style>
-    .btn-edit { background: #ffc107; color: #000; padding: 4px 12px; border-radius: 20px; text-decoration: none; display: inline-block; margin: 2px; font-size: 12px; }
-    .btn-view { background: #17a2b8; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
-    .btn-view:hover { background: #138496; }
-    .btn-delete { background: #dc3545; color: white; padding: 4px 12px; border-radius: 20px; border: none; cursor: pointer; font-size: 12px; display: inline-block; margin: 2px; }
-    .btn-early-payment { background: #fd7e14; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
-    .btn-early-payment:hover { background: #e36209; }
-    .btn-undo { background: #6c757d; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
-    .btn-undo:hover { background: #5a6268; }
-    .btn-postpone { background: #ff9800; color: white; padding: 4px 12px; border-radius: 20px; text-decoration: none; font-size: 12px; display: inline-block; margin: 2px; }
-    .btn-postpone:hover { background: #e68900; }
-    .stats-grid { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 30px; }
-    .stat-card { background: white; border-radius: 20px; padding: 20px; text-align: center; flex: 1; min-width: 150px; border-bottom: 3px solid; text-decoration: none; color: inherit; }
-    .stat-card.all { border-bottom-color: #2a5298; }
-    .stat-card.active { border-bottom-color: #28a745; }
-    .stat-card.expiring { border-bottom-color: #ffc107; }
-    .stat-card.expired { border-bottom-color: #dc3545; }
-    .stat-card .number { font-size: 28px; font-weight: 700; }
-    .filters { background: white; border-radius: 20px; padding: 15px; margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .filters select, .filters input { padding: 8px 15px; border: 1px solid #ddd; border-radius: 30px; }
-    .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 15px; overflow: hidden; }
-    .data-table th, .data-table td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-    .data-table th { background: #2a5298; color: white; }
-    .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; display: inline-block; }
-    .status-active { background: #d4edda; color: #155724; }
-    .status-expiring { background: #fff3cd; color: #856404; }
-    .status-expired { background: #f8d7da; color: #721c24; }
-    .btn-add { background: #28a745; color: white; padding: 8px 20px; border-radius: 30px; text-decoration: none; display: inline-block; margin-bottom: 20px; }
-    .btn-sm { background: #2a5298; color: white; padding: 6px 15px; border-radius: 30px; text-decoration: none; display: inline-block; }
-    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
-    .modal-content { background: white; border-radius: 20px; padding: 25px; width: 400px; text-align: center; }
-    .btn-confirm { background: #dc3545; color: white; border: none; padding: 8px 20px; border-radius: 30px; cursor: pointer; }
-    .btn-cancel { background: #6c757d; color: white; border: none; padding: 8px 20px; border-radius: 30px; cursor: pointer; }
-</style>
-
-<div style="max-width: 1200px; margin: 0 auto;">
-    <h2>📋 قائمة الاقتطاعات</h2>
-    
-    <div class="stats-grid">
-        <a href="?status=all" class="stat-card all"><div>📊 الكل</div><div class="number"><?= $totalAll ?></div></a>
-        <a href="?status=active" class="stat-card active"><div>✅ نشط</div><div class="number"><?= $totalActive ?></div></a>
-        <a href="?status=expiring" class="stat-card expiring"><div>⚠️ ينتهي قريباً</div><div class="number"><?= $totalExpiring ?></div></a>
-        <a href="?status=expired" class="stat-card expired"><div>❌ منتهي</div><div class="number"><?= $totalExpired ?></div></a>
+<div class="deductions-container">
+    <div class="deductions-header">
+        <h2>📋 إدارة الاقتطاعات</h2>
+        <a href="add.php" class="btn-add">➕ إضافة اقتطاع جديد</a>
     </div>
-    
-    <div class="filters">
-        <form method="GET" style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
-            <select name="source">
-                <option value="0">جميع المصادر</option>
-                <?php foreach ($sources as $s): ?>
-                    <option value="<?= $s['id'] ?>" <?= $source_filter == $s['id'] ? 'selected' : '' ?>><?= escape($s['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <select name="status">
-                <option value="">الكل</option>
-                <option value="active" <?= $status_filter == 'active' ? 'selected' : '' ?>>نشط</option>
-                <option value="expiring" <?= $status_filter == 'expiring' ? 'selected' : '' ?>>ينتهي قريباً</option>
-                <option value="expired" <?= $status_filter == 'expired' ? 'selected' : '' ?>>منتهي</option>
-            </select>
-            <input type="text" name="search" placeholder="🔍 اسم الموظف" value="<?= escape($search) ?>">
-            <button type="submit" class="btn-sm">بحث</button>
-            <a href="list.php" class="btn-sm" style="background:#6c757d;">إلغاء</a>
+
+    <!-- ========== بطاقات الإحصائيات (قابلة للنقر كفلاتر) ========== -->
+    <div class="stats-grid">
+        <a href="?status=all<?= $search ? '&search='.urlencode($search) : '' ?><?= $source_filter ? '&source='.$source_filter : '' ?>" 
+           class="stat-card total <?= $status_filter == 'all' ? 'active-card' : '' ?>">
+            <div class="stat-icon">📊</div>
+            <div class="stat-label">إجمالي الاقتطاعات</div>
+            <div class="stat-value"><?= number_format($totalAll) ?></div>
+        </a>
+        <a href="?status=active<?= $search ? '&search='.urlencode($search) : '' ?><?= $source_filter ? '&source='.$source_filter : '' ?>" 
+           class="stat-card active <?= $status_filter == 'active' ? 'active-card' : '' ?>">
+            <div class="stat-icon">✅</div>
+            <div class="stat-label">نشط</div>
+            <div class="stat-value"><?= number_format($totalActive) ?></div>
+        </a>
+        <a href="?status=expiring<?= $search ? '&search='.urlencode($search) : '' ?><?= $source_filter ? '&source='.$source_filter : '' ?>" 
+           class="stat-card expiring <?= $status_filter == 'expiring' ? 'active-card' : '' ?>">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-label">ينتهي قريباً</div>
+            <div class="stat-value"><?= number_format($totalExpiring) ?></div>
+        </a>
+        <a href="?status=expired<?= $search ? '&search='.urlencode($search) : '' ?><?= $source_filter ? '&source='.$source_filter : '' ?>" 
+           class="stat-card expired <?= $status_filter == 'expired' ? 'active-card' : '' ?>">
+            <div class="stat-icon">❌</div>
+            <div class="stat-label">منتهي</div>
+            <div class="stat-value"><?= number_format($totalExpired) ?></div>
+        </a>
+        <a href="?status=loan<?= $search ? '&search='.urlencode($search) : '' ?><?= $source_filter ? '&source='.$source_filter : '' ?>" 
+           class="stat-card loans <?= $status_filter == 'loan' ? 'active-card' : '' ?>">
+            <div class="stat-icon">💰</div>
+            <div class="stat-label">سلف نشطة</div>
+            <div class="stat-value"><?= number_format($totalLoans) ?></div>
+        </a>
+        <a href="?status=all<?= $search ? '&search='.urlencode($search) : '' ?><?= $source_filter ? '&source='.$source_filter : '' ?>" 
+           class="stat-card amount <?= $status_filter == 'all' ? 'active-card' : '' ?>">
+            <div class="stat-icon">💳</div>
+            <div class="stat-label">إجمالي الاقتطاع الشهري</div>
+            <div class="stat-value"><?= number_format($totalMonthlyAmount, 2) ?> <small>دج</small></div>
+        </a>
+    </div>
+
+    <!-- ========== الفلاتر ========== -->
+    <div class="filter-section">
+        <form method="GET" class="filter-form">
+            <div class="filter-group">
+                <label>المصدر</label>
+                <select name="source">
+                    <option value="0">جميع المصادر</option>
+                    <?php foreach ($sources as $s): ?>
+                        <option value="<?= $s['id'] ?>" <?= $source_filter == $s['id'] ? 'selected' : '' ?>><?= htmlspecialchars($s['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>الحالة</label>
+                <select name="status" onchange="this.form.submit()">
+                    <option value="all" <?= $status_filter == 'all' ? 'selected' : '' ?>>الكل</option>
+                    <option value="active" <?= $status_filter == 'active' ? 'selected' : '' ?>>نشط</option>
+                    <option value="expiring" <?= $status_filter == 'expiring' ? 'selected' : '' ?>>ينتهي قريباً</option>
+                    <option value="expired" <?= $status_filter == 'expired' ? 'selected' : '' ?>>منتهي</option>
+                    <option value="loan" <?= $status_filter == 'loan' ? 'selected' : '' ?>>سلف</option>
+                </select>
+            </div>
+            <div class="filter-group" style="flex:2;">
+                <label>بحث</label>
+                <input type="text" name="search" placeholder="اسم الموظف..." value="<?= htmlspecialchars($search) ?>">
+            </div>
+            <button type="submit" class="btn-filter">🔍 بحث</button>
+            <a href="list.php" class="btn-reset">🗑️ إعادة تعيين</a>
         </form>
     </div>
-    
-    <a href="add.php" class="btn-add">➕ إضافة اقتطاع جديد</a>
-    
-    <div style="overflow-x: auto;">
-        <table class="data-table">
+
+    <!-- ========== الجدول ========== -->
+    <div class="table-responsive">
+        <table class="deductions-table">
             <thead>
                 <tr>
                     <th>#</th>
                     <th>الموظف</th>
                     <th>المصدر</th>
-                    <th>المبلغ الشهري (دج)</th>
-                    <th>عدد الأشهر</th>
-                    <th>الرصيد الدائن (دج)</th>
+                    <th>المبلغ الشهري</th>
+                    <th>المدة</th>
+                    <th>الرصيد المتبقي</th>
                     <th>تاريخ البداية</th>
                     <th>تاريخ النهاية</th>
-                    <th>تاريخ الصرف</th>
+                    <th>الأقساط</th>
+                    <th>التقدم</th>
                     <th>الحالة</th>
                     <th>الإجراءات</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($deductions)): ?>
-                    <tr><td colspan="11" style="text-align:center;">لا توجد بيانات</td></tr>
+                    <tr><td colspan="12" class="text-center">لا توجد اقتطاعات مطابقة للبحث</td></tr>
                 <?php else: ?>
                     <?php foreach ($deductions as $d): 
+                        $paid = (int)($d['paid_count'] ?? 0);
+                        $total = (int)($d['total_installments'] ?? $d['total_months']);
+                        $unpaid = (int)($d['unpaid_count'] ?? 0);
+                        $progress = $total > 0 ? round(($paid / $total) * 100) : 0;
                         $hasEarly = isset($earlyMap[$d['id']]);
                         $earlyId = $hasEarly ? $earlyMap[$d['id']] : 0;
                     ?>
@@ -174,34 +182,44 @@ include '../includes/header.php';
                             <td>
                                 <?= $d['id'] ?>
                                 <?php if ($d['is_loan']): ?>
-                                    <span style="background:#ff9800; color:#fff; padding:2px 6px; border-radius:12px; font-size:10px; display:inline-block; margin-right:5px;">سلفة</span>
+                                    <span class="badge-loan">سلفة</span>
                                 <?php endif; ?>
                             </td>
-                            <td><?= escape($d['employee_name']) ?></td>
-                            <td><?= escape($d['source_name']) ?></td>
-                            <td><?= number_format($d['monthly_amount'], 2) ?></td>
+                            <td><strong><?= htmlspecialchars($d['full_name']) ?></strong></td>
+                            <td><?= htmlspecialchars($d['source_name']) ?></td>
+                            <td><?= number_format($d['monthly_amount'], 2) ?> دج</td>
                             <td><?= $d['total_months'] ?> شهر</td>
-                            <td><?= number_format($d['credit_balance'], 2) ?></td>
-                            <td><?= date('d/m/Y', strtotime($d['start_date'])) ?></td>
-                            <td><?= date('d/m/Y', strtotime($d['end_date'])) ?></td>
-                            <td><?= $d['is_loan'] ? safeFormatDate($d['grant_date']) : '—' ?></td>
+                            <td><?= number_format($d['credit_balance'], 2) ?> دج</td>
+                            <td><?= safeFormatDate($d['start_date']) ?></td>
+                            <td><?= safeFormatDate($d['end_date']) ?></td>
                             <td>
-                                <span class="status-badge status-<?= $d['status'] == 'نشط' ? 'active' : ($d['status'] == 'ينتهي قريباً' ? 'expiring' : 'expired') ?>">
+                                <div class="installment-info">
+                                    <span class="installment-count"><?= $paid ?> / <?= $total ?></span>
+                                    <?php if ($unpaid > 0): ?>
+                                        <span class="installment-unpaid">(<?= $unpaid ?> متبقية)</span>
+                                    <?php else: ?>
+                                        <span class="installment-complete">✓ مكتملة</span>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="progress-bar-wrapper">
+                                    <div class="progress-bar-bg">
+                                        <div class="progress-bar-fill" style="width: <?= $progress ?>%;"></div>
+                                    </div>
+                                    <span class="progress-label"><?= $progress ?>%</span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="status-badge <?= $d['status'] == 'نشط' ? 'status-active' : ($d['status'] == 'ينتهي قريباً' ? 'status-expiring' : 'status-expired') ?>">
                                     <?= $d['status'] ?>
                                 </span>
                             </td>
-                            <td class="action-buttons" style="text-align:center;">
-                                <a href="edit.php?id=<?= $d['id'] ?>" class="btn-edit">✏️ تعديل</a>
-                                <a href="view.php?id=<?= $d['id'] ?>" class="btn-view">👁️ عرض التفاصيل</a>
-                                <a href="postpone.php?id=<?= $d['id'] ?>" class="btn-postpone">⏰ تعديل الفترة</a>
-                                <a href="postpone_installment.php?id=<?= $d['id'] ?>" class="btn-postpone">📅 تأجيل قسط</a>
-                                <?php if ($d['is_loan']): ?>
-                                    <a href="early_payment.php?id=<?= $d['id'] ?>" class="btn-early-payment">💰 تسديد مقدم</a>
-                                <?php endif; ?>
-                                <?php if ($hasEarly): ?>
-                                    <a href="undo_early_payment.php?id=<?= $earlyId ?>" class="btn-undo" target="_blank">↩️ إلغاء التسديد</a>
-                                <?php endif; ?>
-                                <button type="button" class="btn-delete" data-id="<?= $d['id'] ?>" data-name="<?= escape($d['employee_name']) ?>">🗑️ حذف</button>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="view.php?id=<?= $d['id'] ?>" class="btn-sm btn-view">📄 عرض وتعديل</a>
+                                    <button class="btn-sm btn-delete delete-btn" data-id="<?= $d['id'] ?>" data-name="<?= htmlspecialchars($d['full_name']) ?>">🗑️ حذف</button>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -211,43 +229,64 @@ include '../includes/header.php';
     </div>
 </div>
 
-<!-- مودال تأكيد الحذف -->
-<div id="deleteModal" class="modal">
-    <div class="modal-content">
+<!-- ========== مودال تأكيد الحذف ========== -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal-box">
         <h3>⚠️ تأكيد الحذف</h3>
         <p>هل أنت متأكد من حذف الاقتطاع الخاص بـ <strong id="deleteEmployeeName"></strong>؟</p>
-        <form id="deleteForm" method="POST" action="delete.php">
-            <input type="hidden" name="id" id="deleteId">
-            <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
-            <button type="submit" class="btn-confirm">🗑️ حذف</button>
-            <button type="button" class="btn-cancel" onclick="closeModal()">إلغاء</button>
-        </form>
+        <p class="text-muted">سيتم حذف جميع الأقساط المرتبطة.</p>
+        <div class="modal-actions">
+            <button class="btn-cancel" id="cancelDelete">إلغاء</button>
+            <button class="btn-confirm-delete" id="confirmDelete">نعم، احذف</button>
+        </div>
     </div>
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('deleteModal');
-    const deleteIdInput = document.getElementById('deleteId');
-    const deleteEmployeeNameSpan = document.getElementById('deleteEmployeeName');
+    const deleteName = document.getElementById('deleteEmployeeName');
+    const confirmBtn = document.getElementById('confirmDelete');
+    const cancelBtn = document.getElementById('cancelDelete');
+    let currentId = null;
 
-    document.querySelectorAll('.btn-delete').forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.preventDefault();
-            deleteIdInput.value = this.getAttribute('data-id');
-            deleteEmployeeNameSpan.innerText = this.getAttribute('data-name');
-            modal.style.display = 'flex';
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            currentId = this.dataset.id;
+            deleteName.textContent = this.dataset.name;
+            modal.classList.add('active');
         });
     });
 
-    function closeModal() {
-        modal.style.display = 'none';
-        deleteIdInput.value = '';
-        deleteEmployeeNameSpan.innerText = '';
-    }
+    cancelBtn.addEventListener('click', function() {
+        modal.classList.remove('active');
+    });
 
-    window.onclick = function(event) {
-        if (event.target === modal) closeModal();
-    }
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) modal.classList.remove('active');
+    });
+
+    confirmBtn.addEventListener('click', function() {
+        if (!currentId) return;
+        const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+        fetch('delete.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'id=' + currentId + '&csrf_token=' + encodeURIComponent(csrfToken)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('خطأ: ' + data.message);
+            }
+        })
+        .catch(() => { alert('حدث خطأ في الاتصال بالخادم'); })
+        .finally(() => { modal.classList.remove('active'); });
+    });
+});
 </script>
 
 <?php include '../includes/footer.php'; ?>

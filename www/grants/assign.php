@@ -72,11 +72,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             (employee_id, grant_id, grant_date, notes, amount, invoice_amount) 
                         VALUES (?, ?, ?, ?, ?, ?)
                     ");
-                    $stmt->execute([$employee_id, $grant_id, $grant_date, $notes, $grant_amount, $invoice_amount]);
+                    $stmt->execute([
+                        $employee_id, 
+                        $grant_id, 
+                        $grant_date, 
+                        $notes, 
+                        $grant_amount, 
+                        $invoice_amount
+                    ]);
                     $grant_id_inserted = $pdo->lastInsertId();
                     
                     // ========== 2. تسجيل العملية في budget_transactions ==========
-                    // المبلغ الفعلي للمنحة (وليس القيمة الثابتة من جدول grants)
                     $stmtTrans = $pdo->prepare("
                         INSERT INTO budget_transactions 
                             (reference_id, type, amount, description, is_deduct, transaction_date) 
@@ -88,18 +94,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         "منحة: " . $grant['name'] . " - الموظف: " . $employee_name
                     ]);
                     
-                    // ========== 3. تحديث social_budget.remaining_budget ==========
-                    // خصم مبلغ المنحة من الميزانية المتبقية
-                    $stmtBudget = $pdo->prepare("
-                        UPDATE social_budget 
-                        SET remaining_budget = remaining_budget - ?
-                        WHERE id = (SELECT id FROM social_budget ORDER BY year DESC LIMIT 1)
-                    ");
-                    $stmtBudget->execute([$grant_amount]);
+                    // ========== 3. تحديث الميزانية (مرة واحدة فقط) ==========
+                    // is_deduct = 1 يعني خصم من الميزانية (صرف)
+                    updateBudgetAfterTransaction($pdo, date('Y'), $grant_amount, 1);
                     
                     // ========== تسجيل التدقيق والإشعارات ==========
-                    audit('GRANT_ASSIGNED', "Grant '{$grant['name']}' assigned to $employee_name (amount: $grant_amount)");
-                    addNotification('منحة جديدة', "تم توزيع منحة {$grant['name']} بقيمة " . number_format($grant_amount, 2) . " دج للموظف $employee_name", null, 'success');
+                    if (function_exists('audit')) {
+                        audit('GRANT_ASSIGNED', "Grant '{$grant['name']}' assigned to $employee_name (amount: $grant_amount)");
+                    }
+                    if (function_exists('addNotification')) {
+                        addNotification('منحة جديدة', "تم توزيع منحة {$grant['name']} بقيمة " . number_format($grant_amount, 2) . " دج للموظف $employee_name", null, 'success');
+                    }
                     
                     $pdo->commit();
                     
