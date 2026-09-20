@@ -1,6 +1,13 @@
 <?php
+// ============================================================
+// monthly_helpers.php - دوال مساعدة للتقرير الشهري
+// ============================================================
+
 if (!function_exists('getTypeLabel')) {
     function getTypeLabel($item) {
+        if ($item['source_name'] == 'هاتف' || $item['type'] == 'phone') {
+            return '<span class="badge-phone">📱 هاتف</span>';
+        }
         if ($item['source_name'] == 'Djezzy') {
             return '<span class="badge-djezzy">📱 جيزي</span>';
         }
@@ -9,9 +16,18 @@ if (!function_exists('getTypeLabel')) {
 }
 
 if (!function_exists('getStatusLabel')) {
+    /**
+     * إرجاع تسمية الحالة مع الصنف المناسب
+     */
     function getStatusLabel($item, $hasUnpaid = false) {
-        if ($item['source_name'] == 'Djezzy') {
+        if ($item['source_name'] == 'هاتف' || $item['source_name'] == 'Djezzy' || $item['type'] == 'phone') {
             return ['text' => '✅ نشط', 'class' => 'status-active'];
+        }
+        if ($item['is_paid']) {
+            return ['text' => '✅ مدفوع', 'class' => 'status-paid'];
+        }
+        if ($item['is_postponed'] ?? 0) {
+            return ['text' => '⏰ مؤجل', 'class' => 'status-postponed'];
         }
         return $hasUnpaid 
             ? ['text' => '✅ نشط', 'class' => 'status-active']
@@ -63,16 +79,20 @@ if (!function_exists('calculateTotals')) {
     function calculateTotals($grouped_items) {
         $totalLoans = 0;
         $totalDeductions = 0;
+        $totalPhones = 0;
         foreach ($grouped_items as $item) {
-            if (!empty($item['is_loan']) && $item['source_name'] != 'Djezzy') {
+            if ($item['source_name'] == 'هاتف' || $item['type'] == 'phone') {
+                $totalPhones += $item['total_amount'];
+            } elseif (!empty($item['is_loan']) && $item['source_name'] != 'Djezzy') {
                 $totalLoans += $item['total_amount'];
             } else {
                 $totalDeductions += $item['total_amount'];
             }
         }
-        return ['loans' => $totalLoans, 'deductions' => $totalDeductions];
+        return ['loans' => $totalLoans, 'deductions' => $totalDeductions, 'phones' => $totalPhones];
     }
 }
+
 // ============================================================
 // دوال خاصة بالتقرير الشهري (التجميع والحساب)
 // ============================================================
@@ -80,12 +100,14 @@ if (!function_exists('calculateTotals')) {
 if (!function_exists('getEffectiveAmount')) {
     /**
      * حساب المبلغ الفعلي للقسط مع مراعاة الدفعات المقدمة
-     * @param array $item بيانات القسط
-     * @param string $report_ym الشهر والسنة (YYYY-MM)
-     * @return float المبلغ الفعلي
      */
     function getEffectiveAmount($item, $report_ym) {
-        if ($item['type'] == 'djezzy') return $item['monthly_amount'];
+        if ($item['type'] == 'djezzy' || $item['type'] == 'phone') {
+            return $item['monthly_amount'];
+        }
+        if ($item['is_paid']) {
+            return $item['monthly_amount'];
+        }
         $monthly = $item['monthly_amount'];
         $pay_date = $item['first_early_payment_date'] ?? null;
         if (!empty($pay_date)) {
@@ -106,9 +128,6 @@ if (!function_exists('getEffectiveAmount')) {
 if (!function_exists('groupItems')) {
     /**
      * تجميع الاقتطاعات حسب (الموظف + المصدر) مع جمع المبالغ
-     * @param array $items قائمة الاقتطاعات (من $all_items)
-     * @param string $report_ym الشهر والسنة (YYYY-MM)
-     * @return array المصفوفة المجمعة
      */
     function groupItems($items, $report_ym) {
         $grouped = [];
@@ -123,12 +142,88 @@ if (!function_exists('groupItems')) {
                     'total_amount' => 0,
                     'is_loan' => $it['is_loan'] ?? 0,
                     'is_paid' => $it['is_paid'] ?? 0,
+                    'is_postponed' => $it['is_postponed'] ?? 0,
                     'type' => $it['type'],
                 ];
             }
-            $amount = ($it['type'] == 'djezzy') ? $it['monthly_amount'] : getEffectiveAmount($it, $report_ym);
+            $amount = ($it['type'] == 'djezzy' || $it['type'] == 'phone') 
+                ? $it['monthly_amount'] 
+                : getEffectiveAmount($it, $report_ym);
             $grouped[$key]['total_amount'] += $amount;
+            if (!empty($it['is_postponed'])) {
+                $grouped[$key]['is_postponed'] = 1;
+            }
         }
         return array_values($grouped);
+    }
+}
+
+// ============================================================
+// دوال خاصة بالهواتف
+// ============================================================
+
+if (!function_exists('getActivePhonesByEmployee')) {
+    /**
+     * جلب أرقام الهواتف النشطة لموظف معين
+     */
+    function getActivePhonesByEmployee($pdo, $employeeId) {
+        $stmt = $pdo->prepare("
+            SELECT * FROM employee_phone_numbers
+            WHERE employee_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$employeeId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+if (!function_exists('getAllActivePhones')) {
+    /**
+     * جلب جميع أرقام الهواتف النشطة
+     */
+    function getAllActivePhones($pdo) {
+        $stmt = $pdo->query("
+            SELECT ep.*, e.name as employee_name
+            FROM employee_phone_numbers ep
+            JOIN employees e ON ep.employee_id = e.id
+            WHERE ep.is_active = 1
+            ORDER BY e.name
+        ");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+if (!function_exists('getEmployeePhoneTotal')) {
+    /**
+     * الحصول على إجمالي المبلغ الشهري لكل موظف (تجميع الأرقام النشطة)
+     */
+    function getEmployeePhoneTotal($pdo, $employeeId) {
+        $stmt = $pdo->prepare("
+            SELECT COALESCE(SUM(monthly_amount), 0) as total
+            FROM employee_phone_numbers
+            WHERE employee_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$employeeId]);
+        return (float)$stmt->fetchColumn();
+    }
+}
+
+if (!function_exists('getEmployeesWithActivePhones')) {
+    /**
+     * الحصول على قائمة الموظفين الذين لديهم أرقام نشطة مع إجمالي المبالغ
+     */
+    function getEmployeesWithActivePhones($pdo) {
+        $stmt = $pdo->query("
+            SELECT 
+                e.id,
+                e.name,
+                COALESCE(SUM(ep.monthly_amount), 0) as total_monthly
+            FROM employees e
+            JOIN employee_phone_numbers ep ON e.id = ep.employee_id
+            WHERE ep.is_active = 1
+            GROUP BY e.id
+            HAVING total_monthly > 0
+            ORDER BY e.name
+        ");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }

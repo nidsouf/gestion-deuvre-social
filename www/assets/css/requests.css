@@ -1,0 +1,90 @@
+/* ============================================================
+   requests.css - وحدة طلبات الموظفين
+   ============================================================ */
+
+/* بطاقات الإحصائيات */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 18px;
+    margin-bottom: 30px;
+}
+.stat-card {
+    background: white;
+    border-radius: 16px;
+    padding: 18px 12px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    border-bottom: 4px solid #ccc;
+    transition: transform 0.2s;
+}
+.stat-card:hover { transform: translateY(-4px); }
+.stat-card .stat-label { font-size: 13px; color: #7f8c8d; font-weight: 600; }
+.stat-card .stat-value { font-size: 28px; font-weight: 700; color: #2c3e50; margin-top: 6px; }
+.stat-card.total { border-bottom-color: #6c757d; }
+.stat-card.pending { border-bottom-color: #ffc107; }
+.stat-card.reviewing { border-bottom-color: #17a2b8; }
+.stat-card.approved { border-bottom-color: #28a745; }
+.stat-card.rejected { border-bottom-color: #dc3545; }
+.stat-card.cancelled { border-bottom-color: #6c757d; }
+
+/* الفلاتر */
+.filter-section { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-bottom: 30px; }
+.filter-form { display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }
+.filter-group { display: flex; flex-direction: column; min-width: 160px; }
+.filter-group label { font-size: 13px; color: #7f8c8d; margin-bottom: 6px; font-weight: 600; }
+.filter-group select, .filter-group input { border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 14px; background: #f8f9fa; }
+.btn-filter { background: #6c5ce7; color: white; border: none; border-radius: 8px; padding: 9px 20px; cursor: pointer; font-weight: 600; }
+.btn-filter:hover { background: #5a4bd1; }
+.btn-reset { background: #e9ecef; color: #495057; border: none; border-radius: 8px; padding: 9px 20px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+
+/* الجدول */
+.requests-table { width: 100%; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06); border-collapse: collapse; }
+.requests-table thead th { background: #f8f9fa; color: #495057; font-weight: 700; padding: 14px 16px; text-align: right; border-bottom: 2px solid #dee2e6; }
+.requests-table tbody td { padding: 12px 16px; border-bottom: 1px solid #f1f3f5; vertical-align: middle; }
+.requests-table tbody tr:hover { background: #f8f9fa; }
+
+/* شارات */
+.badge-type { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+.badge-type.loan { background: #fff3cd; color: #856404; }
+.badge-type.grant { background: #d4edda; color: #155724; }
+.badge-type.deduction { background: #cce5ff; color: #004085; }
+
+.status-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+.status-pending { background: #fff3cd; color: #856404; }
+.status-reviewing { background: #d1ecf1; color: #0c5460; }
+.status-approved { background: #d4edda; color: #155724; }
+.status-rejected { background: #f8d7da; color: #721c24; }
+.status-cancelled { background: #e2e3e5; color: #383d41; }
+
+/* أزرار */
+.btn-sm { display: inline-block; padding: 6px 12px; border-radius: 8px; font-size: 13px; text-decoration: none; margin: 0 3px; transition: all 0.2s; }
+.btn-view { background: #e3f2fd; color: #0d47a1; }
+.btn-view:hover { background: #bbdefb; }
+.btn-review { background: #fff3e0; color: #e65100; }
+.btn-review:hover { background: #ffe0b2; }
+.btn-execute { background: #e8f5e9; color: #1b5e20; }
+.btn-execute:hover { background: #c8e6c9; }
+.btn-danger { background: #ffebee; color: #b71c1c; }
+.btn-danger:hover { background: #ffcdd2; }
+
+/* تعليقات */
+.comment-item { padding: 12px; border-left: 4px solid #6c5ce7; background: #f8f9fa; border-radius: 8px; margin-bottom: 10px; }
+.comment-item p { margin: 5px 0 0; color: #555; }
+
+/* Dark Mode */
+body.dark-mode .stat-card { background: #1A1228; color: #E8E0F0; border-color: #3A2A4A; }
+body.dark-mode .stat-card .stat-value { color: #C8B8F0; }
+body.dark-mode .filter-section { background: #1A1228; border-color: #3A2A4A; }
+body.dark-mode .filter-group select, .body.dark-mode .filter-group input { background: #120B1E; color: #E8E0F0; border-color: #3A2A4A; }
+body.dark-mode .requests-table { background: #1A1228; }
+body.dark-mode .requests-table thead th { background: #2A1A3A; color: #D8C8F0; border-color: #3A2A4A; }
+body.dark-mode .requests-table tbody td { color: #E8E0F0; border-color: #3A2A4A; }
+body.dark-mode .requests-table tbody tr:hover { background: #2A1A3A; }
+body.dark-mode .comment-item { background: #120B1E; color: #E8E0F0; border-color: #6C5CE7; }
+
+@media print {
+    .stats-grid, .filter-section, .btn-sm, .btn-filter, .btn-reset,
+    form, .btn, .btn-primary, .btn-secondary { display: none !important; }
+    .requests-table { box-shadow: none; border: 1px solid #ddd; }
+}

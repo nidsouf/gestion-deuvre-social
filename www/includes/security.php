@@ -190,9 +190,16 @@ function validateSession() {
  * @param int $user_id معرف المستخدم
  * @param string $username اسم المستخدم
  */
-function setSessionData($user_id, $username) {
+/**
+ * تعيين بيانات الجلسة عند تسجيل الدخول
+ * @param int $user_id معرف المستخدم
+ * @param string $username اسم المستخدم
+ * @param string $role دور المستخدم (افتراضي: employee)
+ */
+function setSessionData($user_id, $username, $role = 'employee') {
     $_SESSION['user_id'] = $user_id;
     $_SESSION['username'] = $username;
+    $_SESSION['role'] = $role;
     $_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR'] ?? '';
     $_SESSION['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
     $_SESSION['login_time'] = time();
@@ -308,12 +315,22 @@ function auditLog($pdo, $action, $details = null) {
 /**
  * إرسال رؤوس الأمان للمتصفح
  */
+/**
+ * إرسال رؤوس الأمان للمتصفح
+ */
 function sendSecurityHeaders() {
     header("X-Frame-Options: DENY");
     header("X-Content-Type-Options: nosniff");
     header("X-XSS-Protection: 1; mode=block");
     header("Referrer-Policy: strict-origin-when-cross-origin");
-    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; font-src 'self' https://cdnjs.cloudflare.com;");
+    
+    // سياسة CSP معدلة للسماح بتحميل الملفات من CDN
+    header("Content-Security-Policy: " .
+        "default-src 'self'; " .
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://code.jquery.com; " .
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; " .
+        "font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; " .
+        "img-src 'self' data:;"
+    );
 }
-ob_end_flush();
 ?>

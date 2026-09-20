@@ -196,7 +196,7 @@ include '../includes/header.php';
                                 <?php endif; ?>
                             </td>
                             <td class="action-buttons">
-                                <a href="edit.php?id=<?= $g['id'] ?>" class="btn-edit">✏️ تعديل</a>
+                                <a href="/grants/edit.php?id=<?= $g['id'] ?>" class="btn-edit">✏️ تعديل</a>
                                 <button class="btn-delete" onclick="openDeleteModal(<?= $g['id'] ?>, '<?= addslashes($g['name']) ?>')">🗑️ حذف</button>
                             </td>
                         </tr>

@@ -1,4 +1,9 @@
 <?php
+/**
+ * reports/monthly.php - التقرير الشهري للاقتطاعات
+ * يعرض الأقساط غير المسددة (بما فيها المؤجلة) مع إمكانية التسديد
+ * يدعم الآن اقتطاعات الهواتف (source_id = 999) كاقتطاعات عادية
+ */
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
@@ -7,6 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/security.php';
+require_once '../includes/monthly_helpers.php';
 
 if (!function_exists('getMonthNameArabic')) {
     function getMonthNameArabic($month) {
@@ -16,7 +22,7 @@ if (!function_exists('getMonthNameArabic')) {
 }
 
 // ============================================================
-// جلب البيانات (قبل أي إخراج)
+// جلب البيانات
 // ============================================================
 $year = isset($_GET['year']) ? (int)$_GET['year'] : date('Y');
 $month = isset($_GET['month']) ? (int)$_GET['month'] : date('m');
@@ -31,51 +37,61 @@ $report_ym = sprintf("%04d-%02d", $year, $month);
 $sources = $pdo->query("SELECT id, name FROM sources ORDER BY name")->fetchAll();
 $employees = $pdo->query("SELECT id, name, category FROM employees ORDER BY name")->fetchAll();
 
-// ========== الاقتطاعات العادية ==========
-$sql = "SELECT 
-            mi.id as installment_id,
-            mi.amount as monthly_amount,
-            mi.is_paid,
-            e.id as employee_id,
-            e.name as employee_name,
-            e.category,
-            s.name as source_name,
-            s.id as source_id,
-            d.is_loan,
-            d.credit_balance,
-            (SELECT MIN(ep.payment_date) FROM early_payments ep WHERE ep.deduction_id = d.id AND ep.is_reversed = 0) as first_early_payment_date,
-            'regular' as type
-        FROM monthly_installments mi
-        JOIN employees e ON mi.employee_id = e.id
-        JOIN sources s ON mi.source_id = s.id
-        JOIN deductions d ON mi.deduction_id = d.id
-        WHERE mi.year = :year AND mi.month = :month
-          AND mi.is_postponed = 0
-        ";
+// ============================================================
+// استعلام الأقساط (شامل للهواتف لأنها أصبحت في deductions)
+// ============================================================
+$sql_regular = "
+    SELECT 
+        mi.id as installment_id,
+        mi.amount as monthly_amount,
+        mi.is_paid,
+        mi.is_postponed,
+        e.id as employee_id,
+        e.name as employee_name,
+        e.category,
+        s.name as source_name,
+        s.id as source_id,
+        d.is_loan,
+        d.credit_balance,
+        (SELECT MIN(ep.payment_date) FROM early_payments ep WHERE ep.deduction_id = d.id AND ep.is_reversed = 0) as first_early_payment_date,
+        'regular' as type
+    FROM monthly_installments mi
+    JOIN employees e ON mi.employee_id = e.id
+    JOIN sources s ON mi.source_id = s.id
+    JOIN deductions d ON mi.deduction_id = d.id
+    WHERE mi.year = :year AND mi.month = :month
+";
+
+$sql = $sql_regular;
 $params = [':year' => $year, ':month' => $month];
 
-// إذا لم نطلب عرض المدفوعة، نستبعدها
+// إذا لم نطلب عرض المدفوعة، نضيف شرط is_paid = 0
 if (!$show_paid) {
-    $sql .= " AND mi.is_paid = 0";
+    $sql = str_replace('WHERE mi.year = :year AND mi.month = :month', 'WHERE mi.year = :year AND mi.month = :month AND mi.is_paid = 0', $sql);
 }
 
-if ($source_id > 0) { $sql .= " AND mi.source_id = :source_id"; $params[':source_id'] = $source_id; }
-if ($employee_id > 0) { $sql .= " AND mi.employee_id = :employee_id"; $params[':employee_id'] = $employee_id; }
+if ($source_id > 0) { 
+    $sql .= " AND mi.source_id = :source_id"; 
+    $params[':source_id'] = $source_id; 
+}
+if ($employee_id > 0) { 
+    $sql .= " AND mi.employee_id = :employee_id"; 
+    $params[':employee_id'] = $employee_id; 
+}
 $sql .= " ORDER BY e.name ASC";
 
 $stmt = $pdo->prepare($sql);
-foreach ($params as $k => $v) $stmt->bindValue($k, $v);
+foreach ($params as $k => $v) {
+    $stmt->bindValue($k, $v);
+}
 $stmt->execute();
 $installments = $stmt->fetchAll();
 
-// ========== دالة حساب المبلغ الفعلي (مع إصلاح الأقساط المدفوعة) ==========
+// ========== دالة حساب المبلغ الفعلي ==========
 function getEffectiveAmount($item, $report_ym) {
-    // ✅ إذا كان القسط مدفوعاً، نعرض المبلغ الأصلي (كما في صفحة التفاصيل)
     if ($item['is_paid']) {
         return $item['monthly_amount'];
     }
-    
-    if ($item['type'] == 'djezzy') return $item['monthly_amount'];
     $monthly = $item['monthly_amount'];
     $pay_date = $item['first_early_payment_date'];
     if (!empty($pay_date)) {
@@ -92,9 +108,7 @@ function getEffectiveAmount($item, $report_ym) {
     return $monthly;
 }
 
-// ============================================================
-// دمج وتجميع البيانات حسب (الموظف + المصدر)
-// ============================================================
+// ========== تجميع البيانات حسب الموظف+المصدر ==========
 function groupItems($items, $report_ym) {
     $grouped = [];
     foreach ($items as $it) {
@@ -108,6 +122,7 @@ function groupItems($items, $report_ym) {
                 'source_name' => $it['source_name'],
                 'is_loan' => $it['is_loan'],
                 'is_paid' => $it['is_paid'],
+                'is_postponed' => $it['is_postponed'] ?? 0,
                 'total_amount' => 0,
                 'installment_id' => $it['installment_id'],
                 'type' => $it['type'],
@@ -115,9 +130,11 @@ function groupItems($items, $report_ym) {
         }
         $amount = getEffectiveAmount($it, $report_ym);
         $grouped[$key]['total_amount'] += $amount;
-        // إذا كان أي قسط غير مدفوع، نعتبر الصف غير مدفوع
         if (!$it['is_paid']) {
             $grouped[$key]['is_paid'] = 0;
+        }
+        if (!empty($it['is_postponed'])) {
+            $grouped[$key]['is_postponed'] = 1;
         }
     }
     return array_values($grouped);
@@ -139,115 +156,110 @@ $grandTotal = $totalPermanent + $totalContract;
 $csrf_token = generateCSRFToken();
 $unpaid_count = count(array_filter($installments, fn($it) => !$it['is_paid']));
 
+// ========== دالة عرض الجدول ==========
+function renderMonthlyTable($items, $title, $total, $showPayButton = true, $installments = [], $month_name_ar = '') {
+    ?>
+    <div class="section-title"><?= $title ?></div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>الموظف</th>
+                <th>المصدر</th>
+                <th>المبلغ (دج)</th>
+                <th>النوع</th>
+                <th>الحالة</th>
+                <?php if ($showPayButton): ?>
+                    <th>تسديد</th>
+                <?php endif; ?>
+            </tr>
+        </thead>
+        <tbody>
+        <?php if (empty($items)): ?>
+            <tr><td colspan="<?= $showPayButton ? 7 : 6 ?>" style="text-align:center;">لا توجد بيانات</td></tr>
+        <?php else: $i=1; foreach($items as $it):
+            $amount = $it['total_amount'];
+            // تمييز المصادر
+            $isPhone = ($it['source_id'] == 999);
+            $typeLabel = $isPhone 
+                ? '<span class="badge-phone">📱 هاتف</span>' 
+                : (($it['source_name'] == 'Djezzy') 
+                    ? '<span class="badge-djezzy">📱 جيزي</span>' 
+                    : ($it['is_loan'] ? '💰 سلفة' : '📌 اقتطاع'));
+            
+            if ($it['is_paid']) {
+                $statusText = '✅ مدفوع';
+                $statusClass = 'status-paid';
+            } elseif ($it['is_postponed']) {
+                $statusText = '⏰ مؤجل';
+                $statusClass = 'status-postponed';
+            } else {
+                $statusText = '✅ نشط';
+                $statusClass = 'status-active';
+            }
+            
+            $rowClass = ($isPhone || $it['source_name'] == 'Djezzy') ? 'djezzy-row' : ($it['is_paid'] ? 'paid-row' : '');
+            
+            $hasUnpaid = false;
+            $installment_id_for_pay = 0;
+            // البحث عن قسط غير مدفوع لهذا الموظف والمصدر (جميع الأنواع بما فيها الهواتف)
+            if ($showPayButton && !$it['is_paid']) {
+                foreach ($installments as $orig) {
+                    if ($orig['employee_id'] == $it['employee_id'] && $orig['source_id'] == $it['source_id'] && $orig['is_paid'] == 0) {
+                        $hasUnpaid = true;
+                        $installment_id_for_pay = $orig['installment_id'];
+                        break;
+                    }
+                }
+            }
+            // الآن أصبحت الهواتف قابلة للتسديد مثل باقي الاقتطاعات
+            $canPay = ($hasUnpaid && $showPayButton);
+        ?>
+            <tr class="<?= $rowClass ?>">
+                <td><?= $i++ ?></td>
+                <td><?= htmlspecialchars($it['employee_name']) ?></td>
+                <td><?= htmlspecialchars($it['source_name']) ?></td>
+                <td><?= number_format($amount, 2) ?> دج</td>
+                <td><?= $typeLabel ?></td>
+                <td><span class="badge-status <?= $statusClass ?>"><?= $statusText ?></span></td>
+                <?php if ($showPayButton): ?>
+                    <td>
+                        <?php if ($canPay): ?>
+                            <button type="button" class="btn-pay" onclick="openPayModal(<?= $installment_id_for_pay ?>, '<?= htmlspecialchars($it['employee_name']) ?>', '<?= $month_name_ar ?>', '<?= number_format($amount, 2) ?>')">
+                                💰 تسديد
+                            </button>
+                        <?php else: ?>
+                            <span class="btn-pay-disabled">✔ تم</span>
+                        <?php endif; ?>
+                    </td>
+                <?php endif; ?>
+            </tr>
+        <?php endforeach; ?>
+        <tr class="total-row">
+            <td colspan="<?= $showPayButton ? 3 : 3 ?>"><strong>الإجمالي</strong></td>
+            <td colspan="<?= $showPayButton ? 4 : 3 ?>"><strong><?= number_format($total, 2) ?> دج</strong></td>
+        </tr>
+        <?php endif; ?>
+        </tbody>
+    </table>
+    <?php
+}
+
 // ============================================================
 // وضع الطباعة
 // ============================================================
 if ($print) {
-    ?>
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <title>تقرير شهري - <?= $month_name_ar . ' ' . $year ?></title>
-        <style>
-            *{margin:0;padding:0;box-sizing:border-box}
-            body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:white;padding:20px}
-            .print-header{text-align:center;margin-bottom:25px;border-bottom:2px solid #2a5298;padding-bottom:10px}
-            .print-header h2{color:#2a5298}
-            .section-title{font-size:18px;font-weight:bold;margin:20px 0 10px;border-right:4px solid #2a5298;padding-right:10px}
-            table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:12pt}
-            th,td{border:1px solid #999;padding:6px;text-align:center}
-            th{background:#2a5298;color:white}
-            .total-row{background:#f0f0f0;font-weight:bold}
-            .badge-djezzy{background:#6f42c1;color:white;padding:2px 8px;border-radius:12px;font-size:10pt;display:inline-block}
-            .djezzy-row{background:#f8f0ff}
-            .footer{text-align:center;margin-top:30px;font-size:10px;color:#666}
-            @media print{body{margin:0;padding:0}}
-        </style>
-    </head>
-    <body>
-        <div class="print-header">
-            <h2>مركز التكوين والتعليم المهنيين</h2>
-            <h3>الشهيد علي بوسحابة - بكوينين</h3>
-            <h4>لجنة الخدمات الاجتماعية</h4>
-            <p>التقرير الشهري للاقتطاعات - <?= $month_name_ar . ' ' . $year ?></p>
-            <?php if ($show_paid): ?>
-                <p style="color:#17a2b8;">(يشمل الأقساط المدفوعة)</p>
-            <?php endif; ?>
-        </div>
-
-        <!-- الدائمون -->
-        <div class="section-title">👔 الموظفون الدائمون</div>
-        <table>
-            <thead><tr><th>#</th><th>الموظف</th><th>المصدر</th><th>المبلغ (دج)</th><th>النوع</th><th>الحالة</th></tr></thead>
-            <tbody>
-            <?php if(empty($permG)): ?>
-                <tr><td colspan="6" style="text-align:center;">لا توجد بيانات</td></tr>
-            <?php else: $i=1; foreach($permG as $it):
-                $amount = $it['total_amount'];
-                $typeLabel = ($it['source_name'] == 'Djezzy') ? '<span class="badge-djezzy">📱 جيزي</span>' : ($it['is_loan'] ? '💰 سلفة' : '📌 اقتطاع');
-                $statusText = $it['is_paid'] ? '✅ مدفوع' : '✅ نشط';
-                $statusClass = $it['is_paid'] ? 'status-paid' : 'status-active';
-                $rowClass = ($it['source_name'] == 'Djezzy') ? 'djezzy-row' : ($it['is_paid'] ? 'paid-row' : '');
-            ?>
-            <tr class="<?= $rowClass ?>">
-                <td><?= $i++ ?></td>
-                <td><?= htmlspecialchars($it['employee_name']) ?></td>
-                <td><?= htmlspecialchars($it['source_name']) ?></td>
-                <td><?= number_format($amount,2) ?> دج</td>
-                <td><?= $typeLabel ?></td>
-                <td><span class="badge-status <?= $statusClass ?>"><?= $statusText ?></span></td>
-            </tr>
-            <?php endforeach; ?>
-            <tr class="total-row">
-                <td colspan="3"><strong>الإجمالي</strong></td>
-                <td colspan="3"><strong><?= number_format($totalPermanent,2) ?> دج</strong></td>
-            </tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
-
-        <!-- المتعاقدون -->
-        <div style="page-break-before:always;"></div>
-        <div class="section-title">👕 الموظفون المتعاقدون</div>
-        <table>
-            <thead><tr><th>#</th><th>الموظف</th><th>المصدر</th><th>المبلغ (دج)</th><th>النوع</th><th>الحالة</th></tr></thead>
-            <tbody>
-            <?php if(empty($contG)): ?>
-                <tr><td colspan="6" style="text-align:center;">لا توجد بيانات</td></tr>
-            <?php else: $i=1; foreach($contG as $it):
-                $amount = $it['total_amount'];
-                $typeLabel = ($it['source_name'] == 'Djezzy') ? '<span class="badge-djezzy">📱 جيزي</span>' : ($it['is_loan'] ? '💰 سلفة' : '📌 اقتطاع');
-                $statusText = $it['is_paid'] ? '✅ مدفوع' : '✅ نشط';
-                $statusClass = $it['is_paid'] ? 'status-paid' : 'status-active';
-                $rowClass = ($it['source_name'] == 'Djezzy') ? 'djezzy-row' : ($it['is_paid'] ? 'paid-row' : '');
-            ?>
-            <tr class="<?= $rowClass ?>">
-                <td><?= $i++ ?></td>
-                <td><?= htmlspecialchars($it['employee_name']) ?></td>
-                <td><?= htmlspecialchars($it['source_name']) ?></td>
-                <td><?= number_format($amount,2) ?> دج</td>
-                <td><?= $typeLabel ?></td>
-                <td><span class="badge-status <?= $statusClass ?>"><?= $statusText ?></span></td>
-            </tr>
-            <?php endforeach; ?>
-            <tr class="total-row">
-                <td colspan="3"><strong>الإجمالي</strong></td>
-                <td colspan="3"><strong><?= number_format($totalContract,2) ?> دج</strong></td>
-            </tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
-
-        <div style="margin-top:20px; padding:12px; background:#ff9800; border-radius:8px; text-align:center; font-weight:bold;">
-            💰 الإجمالي العام للشهر: <?= number_format($grandTotal,2) ?> دج
-        </div>
-
-        <div class="footer">تم إنشاء التقرير بواسطة نظام إدارة الاقتطاعات بتاريخ <?= date('Y-m-d H:i:s') ?></div>
-        <script>window.onload = function() { window.print(); };</script>
-    </body>
-    </html>
-    <?php
+    $year = $year;
+    $month = $month;
+    $month_name_ar = $month_name_ar;
+    $show_paid = $show_paid;
+    $permG = $permG;
+    $contG = $contG;
+    $totalPermanent = $totalPermanent;
+    $totalContract = $totalContract;
+    $grandTotal = $grandTotal;
+    
+    include __DIR__ . '/monthly_print.php';
     exit;
 }
 
@@ -263,11 +275,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $employee_filter = (int)($_POST['employee_filter'] ?? 0);
     $show_paid_post = (int)($_POST['show_paid'] ?? 0);
 
-    // تسديد فردي
+    // ============================================================
+    // ✅ تسديد فردي
+    // ============================================================
     if (isset($_POST['pay_single']) && isset($_POST['installment_id'])) {
         try {
             $pdo->beginTransaction();
             
+            // جلب بيانات القسط مع معلومات المصدر
             $stmt = $pdo->prepare("
                 SELECT mi.*, d.is_loan, d.id as deduction_id
                 FROM monthly_installments mi
@@ -281,11 +296,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('القسط غير موجود أو تم سداده مسبقاً');
             }
             
+            // تحديث حالة القسط إلى مدفوع
             $update = $pdo->prepare("UPDATE monthly_installments SET is_paid = 1, paid_date = datetime('now') WHERE id = ?");
             $update->execute([$inst['id']]);
             
-            if ($inst['is_loan']) {
+            // 🔹 إضافة المبلغ إلى الميزانية إذا كانت سلفة أو هاتف (source_id = 999)
+            $shouldUpdateBudget = ($inst['is_loan'] == 1 || $inst['source_id'] == 999);
+            
+            if ($shouldUpdateBudget) {
                 $amount = $inst['amount'];
+                
+                // تحديث الميزانية المتبقية
                 $stmtBudget = $pdo->prepare("
                     UPDATE social_budget 
                     SET remaining_budget = remaining_budget + ?
@@ -293,6 +314,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ");
                 $stmtBudget->execute([$amount]);
                 
+                // تحديد نوع الوصف
+                if ($inst['source_id'] == 999) {
+                    $description = "استرجاع هاتف (قسط شهر " . getMonthNameArabic($month) . " " . $year . ")";
+                } else {
+                    $description = "استرجاع سلفة (قسط شهر " . getMonthNameArabic($month) . " " . $year . ")";
+                }
+                
+                // تسجيل المعاملة في budget_transactions كإيراد (is_deduct = 0)
                 $stmtTrans = $pdo->prepare("
                     INSERT INTO budget_transactions (reference_id, type, amount, description, is_deduct, transaction_date)
                     VALUES (?, 'installment', ?, ?, 0, datetime('now'))
@@ -300,7 +329,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtTrans->execute([
                     $inst['deduction_id'],
                     $amount,
-                    "استرجاع سلفة (قسط شهر " . getMonthNameArabic($month) . " " . $year . ")"
+                    $description
                 ]);
             }
             
@@ -314,7 +343,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // تسديد الكل
+    // ============================================================
+    // ✅ تسديد الكل
+    // ============================================================
     if (isset($_POST['pay_all'])) {
         try {
             $pdo->beginTransaction();
@@ -332,7 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $count = 0;
             foreach ($installments_all as $inst) {
-                // نستخدم معالجة كل قسط على حدة (منطق مشابه للفردي)
+                // جلب تفاصيل القسط
                 $stmt2 = $pdo->prepare("
                     SELECT mi.*, d.is_loan, d.id as deduction_id
                     FROM monthly_installments mi
@@ -342,13 +373,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt2->execute([$inst['id']]);
                 $data = $stmt2->fetch();
                 if ($data) {
+                    // تحديث حالة القسط
                     $update = $pdo->prepare("UPDATE monthly_installments SET is_paid = 1, paid_date = datetime('now') WHERE id = ?");
                     $update->execute([$data['id']]);
-                    if ($data['is_loan']) {
-                        $stmtBudget = $pdo->prepare("UPDATE social_budget SET remaining_budget = remaining_budget + ? WHERE id = (SELECT id FROM social_budget ORDER BY year DESC LIMIT 1)");
+                    
+                    // 🔹 إضافة المبلغ إلى الميزانية إذا كانت سلفة أو هاتف
+                    $shouldUpdateBudget = ($data['is_loan'] == 1 || $data['source_id'] == 999);
+                    
+                    if ($shouldUpdateBudget) {
+                        // تحديث الميزانية المتبقية
+                        $stmtBudget = $pdo->prepare("
+                            UPDATE social_budget 
+                            SET remaining_budget = remaining_budget + ? 
+                            WHERE id = (SELECT id FROM social_budget ORDER BY year DESC LIMIT 1)
+                        ");
                         $stmtBudget->execute([$data['amount']]);
-                        $stmtTrans = $pdo->prepare("INSERT INTO budget_transactions (reference_id, type, amount, description, is_deduct, transaction_date) VALUES (?, 'installment', ?, ?, 0, datetime('now'))");
-                        $stmtTrans->execute([$data['deduction_id'], $data['amount'], "استرجاع سلفة (تسديد الكل – شهر " . getMonthNameArabic($month) . " " . $year . ")"]);
+                        
+                        // تحديد الوصف المناسب
+                        if ($data['source_id'] == 999) {
+                            $description = "استرجاع هاتف (تسديد الكل – شهر " . getMonthNameArabic($month) . " " . $year . ")";
+                        } else {
+                            $description = "استرجاع سلفة (تسديد الكل – شهر " . getMonthNameArabic($month) . " " . $year . ")";
+                        }
+                        
+                        // تسجيل المعاملة كإيراد
+                        $stmtTrans = $pdo->prepare("
+                            INSERT INTO budget_transactions (reference_id, type, amount, description, is_deduct, transaction_date) 
+                            VALUES (?, 'installment', ?, ?, 0, datetime('now'))
+                        ");
+                        $stmtTrans->execute([
+                            $data['deduction_id'],
+                            $data['amount'],
+                            $description
+                        ]);
                     }
                     $count++;
                 }
@@ -409,6 +466,7 @@ include '../includes/header.php';
                 <?php foreach($sources as $src): ?>
                     <option value="<?= $src['id'] ?>" <?= ($source_id==$src['id']) ? 'selected' : '' ?>><?= htmlspecialchars($src['name']) ?></option>
                 <?php endforeach; ?>
+                <option value="999" <?= ($source_id==999) ? 'selected' : '' ?>>📱 هاتف</option>
             </select></div>
             <div class="filter-group"><label>الموظف:</label><select name="employee_id">
                 <option value="0">جميع الموظفين</option>
@@ -441,78 +499,8 @@ include '../includes/header.php';
             </button>
         <?php endif; ?>
 
-        <!-- دالة عرض الجدول (مضمنة هنا) -->
-        <?php function renderMonthlyTable($items, $title, $total, $showPayButton = true, $allItems = [], $installments = [], $month_name_ar = '') { ?>
-            <div class="section-title"><?= $title ?></div>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>الموظف</th>
-                        <th>المصدر</th>
-                        <th>المبلغ (دج)</th>
-                        <th>النوع</th>
-                        <th>الحالة</th>
-                        <?php if ($showPayButton): ?>
-                            <th>تسديد</th>
-                        <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php if (empty($items)): ?>
-                    <tr><td colspan="<?= $showPayButton ? 7 : 6 ?>" style="text-align:center;">لا توجد بيانات</td></tr>
-                <?php else: $i=1; foreach($items as $it):
-                    $amount = $it['total_amount'];
-                    $typeLabel = ($it['source_name'] == 'Djezzy') ? '<span class="badge-djezzy">📱 جيزي</span>' : ($it['is_loan'] ? '💰 سلفة' : '📌 اقتطاع');
-                    $isPaid = $it['is_paid'];
-                    $statusText = $isPaid ? '✅ مدفوع' : '✅ نشط';
-                    $statusClass = $isPaid ? 'status-paid' : 'status-active';
-                    $rowClass = ($it['source_name'] == 'Djezzy') ? 'djezzy-row' : ($isPaid ? 'paid-row' : '');
-                    
-                    $hasUnpaid = false;
-                    $installment_id_for_pay = 0;
-                    if ($showPayButton && $it['source_name'] != 'Djezzy' && !$isPaid) {
-                        foreach ($installments as $orig) {
-                            if ($orig['employee_id'] == $it['employee_id'] && $orig['source_id'] == $it['source_id'] && $orig['is_paid'] == 0) {
-                                $hasUnpaid = true;
-                                $installment_id_for_pay = $orig['installment_id'];
-                                break;
-                            }
-                        }
-                    }
-                    $canPay = ($hasUnpaid && $it['source_name'] != 'Djezzy' && $showPayButton);
-                ?>
-                    <tr class="<?= $rowClass ?>">
-                        <td><?= $i++ ?></td>
-                        <td><?= htmlspecialchars($it['employee_name']) ?></td>
-                        <td><?= htmlspecialchars($it['source_name']) ?></td>
-                        <td><?= number_format($amount, 2) ?> دج</td>
-                        <td><?= $typeLabel ?></td>
-                        <td><span class="badge-status <?= $statusClass ?>"><?= $statusText ?></span></td>
-                        <?php if ($showPayButton): ?>
-                            <td>
-                                <?php if ($canPay): ?>
-                                    <button type="button" class="btn-pay" onclick="openPayModal(<?= $installment_id_for_pay ?>, '<?= htmlspecialchars($it['employee_name']) ?>', '<?= $month_name_ar ?>', '<?= number_format($amount, 2) ?>')">
-                                        💰 تسديد
-                                    </button>
-                                <?php else: ?>
-                                    <span class="btn-pay-disabled">✔ تم</span>
-                                <?php endif; ?>
-                            </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endforeach; ?>
-                <tr class="total-row">
-                    <td colspan="<?= $showPayButton ? 3 : 3 ?>"><strong>الإجمالي</strong></td>
-                    <td colspan="<?= $showPayButton ? 4 : 3 ?>"><strong><?= number_format($total, 2) ?> دج</strong></td>
-                </tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        <?php } ?>
-
-        <?php renderMonthlyTable($permG, '👔 الموظفون الدائمون', $totalPermanent, !$show_paid, [], $installments, $month_name_ar); ?>
-        <?php renderMonthlyTable($contG, '👕 الموظفون المتعاقدون', $totalContract, !$show_paid, [], $installments, $month_name_ar); ?>
+        <?php renderMonthlyTable($permG, '👔 الموظفون الدائمون', $totalPermanent, !$show_paid, $installments, $month_name_ar); ?>
+        <?php renderMonthlyTable($contG, '👕 الموظفون المتعاقدون', $totalContract, !$show_paid, $installments, $month_name_ar); ?>
 
         <div style="margin-top:20px; padding:12px; background:#ff9800; border-radius:8px; text-align:center; font-weight:bold;">
             💰 الإجمالي العام للشهر: <?= number_format($grandTotal, 2) ?> دج
@@ -546,7 +534,7 @@ include '../includes/header.php';
         <h3 style="color: #007bff;">💰 تأكيد تسديد الكل</h3>
         <p>سيتم تسديد جميع الأقساط غير المدفوعة للشهر <strong><?= $month_name_ar ?></strong>.</p>
         <p><strong>عدد الأقساط:</strong> <span id="payAllCount">0</span></p>
-        <p class="text-muted">سيتم إعادة مبالغ السلف إلى الميزانية تلقائياً.</p>
+        <p class="text-muted">سيتم إعادة مبالغ السلف والهواتف إلى الميزانية تلقائياً.</p>
         <form method="POST" id="payAllForm">
             <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
             <input type="hidden" name="pay_all" value="1">

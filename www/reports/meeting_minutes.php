@@ -158,8 +158,11 @@ if (in_array($month, [3,6,9,12])) {
     $saadine_tri_total = $stmtTri->fetchColumn();
 }
 
-// ========== 5. جيزي ==========
-$djezzy_monthly_total = 0;
+// ========== 5. الهواتف (النظام الجديد) ==========
+$djezzy_monthly_total = 0;   // إجمالي الاقتطاعات الشهرية من الموظفين
+$djezzy_due_amount = 0;      // المبلغ الإجمالي المستحق (من شيكات مصدر "هاتف")
+
+// أ. الاقتطاعات الشهرية من الموظفين
 $stmtDjezzy = $pdo->prepare("
     SELECT COALESCE(SUM(epn.monthly_amount), 0) as total
     FROM employee_phone_numbers epn
@@ -167,6 +170,35 @@ $stmtDjezzy = $pdo->prepare("
 ");
 $stmtDjezzy->execute();
 $djezzy_monthly_total = $stmtDjezzy->fetchColumn();
+
+// ب. المبلغ الإجمالي المستحق (من شيكات مصدر "هاتف")
+$sourcePhone = $pdo->query("
+    SELECT id FROM sources 
+    WHERE name = 'هاتف' 
+       OR name LIKE '%هاتف%' 
+       OR name LIKE '%Phone%' 
+       OR name LIKE '%phone%'
+    LIMIT 1
+")->fetchColumn();
+
+if ($sourcePhone) {
+    $stmtPhoneDue = $pdo->prepare("
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM source_payments
+        WHERE source_id = :source_id
+          AND strftime('%Y-%m', cheque_date) = :year_month
+    ");
+    $stmtPhoneDue->execute([
+        ':source_id' => $sourcePhone,
+        ':year_month' => $year_month
+    ]);
+    $djezzy_due_amount = $stmtPhoneDue->fetchColumn();
+}
+
+// ج. احتياطي: إذا لم توجد شيكات، نستخدم قيمة الاقتطاعات
+if ($djezzy_due_amount == 0 && $djezzy_monthly_total > 0) {
+    $djezzy_due_amount = $djezzy_monthly_total;
+}
 
 // ========== 6. تسديد مستحقات سعدين ==========
 $sourceSaadine = $pdo->query("SELECT id FROM sources WHERE name = 'سعدين للتجهير'")->fetchColumn();
@@ -367,8 +399,12 @@ include '../includes/header.php';
     <?php endif; ?>
 
     <div class="info-box">
-    <p><strong>💰 تسديد مستحقات سعدين للتجهير (هذا الشهر):</strong> <?= number_format($saadine_paid, 2) ?> دج</p>
-</div>
+        <p><strong>💰 تسديد مستحقات سعدين للتجهير (هذا الشهر):</strong> <?= number_format($saadine_paid, 2) ?> دج</p>
+        <?php if ($show_djezzy): ?>
+            <p><strong>📱 إجمالي الاقتطاعات الشهرية للهواتف:</strong> <?= number_format($djezzy_monthly_total, 2) ?> دج</p>
+            <p><strong>📱 المبلغ الإجمالي المستحق للهواتف:</strong> <?= number_format($djezzy_due_amount, 2) ?> دج</p>
+        <?php endif; ?>
+    </div>
 
     <form method="POST">
         <input type="hidden" name="session_number" value="<?= $session_number ?>">
@@ -418,9 +454,10 @@ include '../includes/header.php';
         </div>
 
         <div class="form-group">
-            <label>📱 إدراج إجمالي الاقتطاعات الشهرية لجيزي:</label>
+            <label>📱 إدراج بند الهواتف في المحضر:</label>
             <label style="font-weight: normal;">
-                <input type="checkbox" name="show_djezzy" value="1" <?= ($show_djezzy ? 'checked' : '') ?>> عرض مبلغ جيزي الشهري
+                <input type="checkbox" name="show_djezzy" value="1" <?= ($show_djezzy ? 'checked' : '') ?>> 
+                عرض إجمالي الاقتطاعات الشهرية والمبلغ المستحق للهواتف
             </label>
         </div>
 
@@ -507,7 +544,7 @@ include '../includes/header.php';
                     <tr>
                         <td><input type="checkbox" name="selected_loans[]" value="<?= $l['id'] ?>"></td>
                         <td><?= $i++ ?></td>
-                        <td><?= htmlspecialchars($l['employee_name']) ?><br><small style="font-size:9pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($mg['account_number'] ?? '—') ?></small></td>
+                        <td><?= htmlspecialchars($l['employee_name']) ?><br><small style="font-size:9pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($l['account_number'] ?? '—') ?></small></td>
                         <td><?= htmlspecialchars($l['source_name']) ?></td>
                         <td><?= number_format($l['total_amount'], 2) ?> دج</td>
                         <td><?= safeFormatDate($l['grant_date']) ?></td>
@@ -581,7 +618,7 @@ include '../includes/header.php';
         <!-- ========== نص المحضر ========== -->
         <div class="form-group">
             <label>✍️ نص المحضر:</label>
-            <textarea name="content" rows="15" style="font-family: monospace; line-height: 1.5;"><?= htmlspecialchars($minute['content'] ?? "محضر جلسة اللجنة الاجتماعية\nالتاريخ: " . date('d/m/Y') . "\n\nبعد المناقشة والاطلاع على تقارير المنح، تقرر ما يلي:\n\n1. الموافقة على المنح المقدمة لهذا الشهر بمبلغ إجمالي قدره " . number_format($totalGrants, 2) . " دج.\n" . ($show_djezzy ? "2. إجمالي الاقتطاعات الشهرية لجيزي: " . number_format($djezzy_monthly_total, 2) . " دج.\n" : "2. لم يتم تضمين بند جيزي في هذا المحضر.\n") . "3. تسديد مستحقات سعدين للتجهير: " . number_format($saadine_paid, 2) . " دج.\n" . ($show_tri_total ? "4. إجمالي الاقتطاع الثلاثي لسعدين للتجهير: " . number_format($saadine_tri_total, 2) . " دج.\n" : "") . "\n\nالتوقيعات:\nرئيس اللجنة: __________\nالمقرر: __________\nأمين الصندوق: __________") ?></textarea>
+            <textarea name="content" rows="15" style="font-family: monospace; line-height: 1.5;"><?= htmlspecialchars($minute['content'] ?? "محضر جلسة اللجنة الاجتماعية\nالتاريخ: " . date('d/m/Y') . "\n\nبعد المناقشة والاطلاع على تقارير المنح، تقرر ما يلي:\n\n1. الموافقة على المنح المقدمة لهذا الشهر بمبلغ إجمالي قدره " . number_format($totalGrants, 2) . " دج.\n" . ($show_djezzy ? "2. الهواتف:\n   - إجمالي الاقتطاعات الشهرية: " . number_format($djezzy_monthly_total, 2) . " دج.\n   - المبلغ الإجمالي المستحق: " . number_format($djezzy_due_amount, 2) . " دج.\n" : "2. لم يتم تضمين بند الهواتف في هذا المحضر.\n") . "3. تسديد مستحقات سعدين للتجهير: " . number_format($saadine_paid, 2) . " دج.\n" . ($show_tri_total ? "4. إجمالي الاقتطاع الثلاثي لسعدين للتجهير: " . number_format($saadine_tri_total, 2) . " دج.\n" : "") . "\n\nالتوقيعات:\nرئيس اللجنة: __________\nالمقرر: __________\nأمين الصندوق: __________") ?></textarea>
         </div>
 
         <div class="form-group">

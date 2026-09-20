@@ -13,7 +13,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $cheque_date = $_POST['cheque_date'];
     $amount = (float)$_POST['amount'];
     $quarter = isset($_POST['quarter']) ? (int)$_POST['quarter'] : null;
+    $category = isset($_POST['category']) ? $_POST['category'] : 'deduction';
     $notes = trim($_POST['notes'] ?? '');
+
+    // التحقق من صحة category
+    if (!in_array($category, ['deduction', 'purchase', 'other'])) {
+        $category = 'deduction';
+    }
 
     if ($amount <= 0 || !$source_id || !$cheque_number || !$cheque_date) {
         setToast('يرجى ملء جميع الحقول المطلوبة', 'warning');
@@ -21,7 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     $cheque_date = date('Y-m-d', strtotime($cheque_date));
-    if ($cheque_date === '1970-01-01') { setToast('تاريخ الشيك غير صالح', 'error'); redirectTo('add.php'); }
+    if ($cheque_date === '1970-01-01') {
+        setToast('تاريخ الشيك غير صالح', 'error');
+        redirectTo('add.php');
+    }
 
     if ($source_id === 1 && ($quarter < 1 || $quarter > 4)) {
         setToast('يجب اختيار رقم الربع (1-4) لمصدر سعدين', 'warning');
@@ -29,11 +38,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     try {
-        $stmt = $pdo->prepare("INSERT INTO source_payments (source_id, cheque_number, cheque_date, amount, quarter, notes) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$source_id, $cheque_number, $cheque_date, $amount, $quarter, $notes]);
-        setToast('✅ تم إضافة الشيك بنجاح', 'success');
+        $pdo->beginTransaction();
+
+        // 1. إدراج الشيك مع التصنيف
+        $stmt = $pdo->prepare("
+            INSERT INTO source_payments (source_id, cheque_number, cheque_date, amount, quarter, category, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([$source_id, $cheque_number, $cheque_date, $amount, $quarter, $category, $notes]);
+        $paymentId = $pdo->lastInsertId();
+
+        // 2. تسجيل في budget_transactions (خصم من الميزانية)
+        $stmt = $pdo->prepare("
+            INSERT INTO budget_transactions (
+                type, reference_id, amount, is_deduct, description, transaction_date
+            ) VALUES ('payment', ?, ?, 1, ?, datetime('now'))
+        ");
+        $description = "دفع شيك رقم {$cheque_number} - " . date('d/m/Y', strtotime($cheque_date));
+        $stmt->execute([$paymentId, $amount, $description]);
+        $budgetTransactionId = $pdo->lastInsertId();
+
+        // 3. تحديث social_budget (خصم)
+        $stmt = $pdo->prepare("
+            UPDATE social_budget 
+            SET remaining_budget = remaining_budget - ?,
+                last_updated = datetime('now')
+            WHERE id = 1
+        ");
+        $stmt->execute([$amount]);
+
+        // 4. ربط الشيك بالمعاملة المالية
+        $stmt = $pdo->prepare("UPDATE source_payments SET budget_transaction_id = ? WHERE id = ?");
+        $stmt->execute([$budgetTransactionId, $paymentId]);
+
+        $pdo->commit();
+        setToast('✅ تم إضافة الشيك وتحديث الميزانية بنجاح', 'success');
         redirectTo('list.php');
+
     } catch (Exception $e) {
+        $pdo->rollBack();
         setToast('❌ حدث خطأ: ' . $e->getMessage(), 'error');
         redirectTo('add.php');
     }
@@ -59,6 +102,19 @@ include '../includes/header.php';
                     <option value="<?= $src['id'] ?>"><?= htmlspecialchars($src['name']) ?></option>
                 <?php endforeach; ?>
             </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom:15px;">
+            <label style="display:block; font-weight:bold; margin-bottom:5px;">🏷️ تصنيف الشيك <span style="color:red;">*</span></label>
+            <select name="category" required style="width:100%; padding:10px; border-radius:12px; border:1px solid #ddd;">
+                <option value="deduction">🔗 مقابل اقتطاعات (يُحسب في المطابقة)</option>
+                <option value="purchase">🛒 مشتريات / هدايا / مناسبات (لا يُحسب)</option>
+                <option value="other">📦 أخرى (لا يُحسب)</option>
+            </select>
+            <small style="color:#666; display:block; margin-top:5px;">
+                ℹ️ اختر "مقابل اقتطاعات" إذا كان الشيك يقابل مبالغ مُقتطعة من رواتب الموظفين.
+                أما "مشتريات/هدايا" فهي مصاريف مباشرة من ميزانية اللجنة.
+            </small>
         </div>
 
         <div class="form-group" style="margin-bottom:15px;">

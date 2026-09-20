@@ -1,0 +1,467 @@
+/**
+ * ai_archive.css
+ * تنسيق صفحة أرشيف التحليلات الذكية
+ * متوافق مع Bootstrap 5 ونظام التصميم الحالي
+ */
+
+/* ============================================================
+   الحاوية الرئيسية
+   ============================================================ */
+.ai-archive-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px 15px;
+}
+
+.ai-archive-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.ai-archive-header h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.ai-archive-header h2 .icon {
+    margin-left: 10px;
+}
+
+/* ============================================================
+   بطاقات الإحصائيات
+   ============================================================ */
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.stat-card-ai {
+    background: #fff;
+    border-radius: 12px;
+    padding: 18px 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #e9ecef;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card-ai:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+
+.stat-card-ai .stat-number {
+    font-size: 28px;
+    font-weight: 700;
+    color: #2c3e50;
+    line-height: 1.2;
+}
+
+.stat-card-ai .stat-label {
+    font-size: 13px;
+    color: #6c757d;
+    margin-top: 4px;
+}
+
+.stat-card-ai.primary .stat-number { color: #3498db; }
+.stat-card-ai.success .stat-number { color: #28a745; }
+.stat-card-ai.warning .stat-number { color: #f39c12; }
+.stat-card-ai.danger .stat-number { color: #e74c3c; }
+.stat-card-ai.purple .stat-number { color: #9b59b6; }
+.stat-card-ai.info .stat-number { color: #17a2b8; }
+
+/* ============================================================
+   منطقة الفلاتر
+   ============================================================ */
+.filter-section-ai {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 25px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    border: 1px solid #e9ecef;
+}
+
+.filter-group-ai {
+    flex: 1;
+    min-width: 150px;
+}
+
+.filter-group-ai label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 4px;
+    letter-spacing: 0.3px;
+}
+
+.filter-group-ai select,
+.filter-group-ai input {
+    width: 100%;
+    padding: 7px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fff;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.filter-group-ai select:focus,
+.filter-group-ai input:focus {
+    border-color: #3498db;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(52,152,219,0.1);
+}
+
+.filter-actions-ai {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-actions-ai .btn {
+    padding: 7px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-filter-ai {
+    background: #3498db;
+    color: #fff;
+}
+.btn-filter-ai:hover { background: #2980b9; }
+
+.btn-reset-ai {
+    background: #e9ecef;
+    color: #495057;
+}
+.btn-reset-ai:hover { background: #dee2e6; }
+
+/* ============================================================
+   بطاقات التقارير
+   ============================================================ */
+.report-card-ai {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e9ecef;
+    margin-bottom: 18px;
+    overflow: hidden;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.report-card-ai:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    border-color: #3498db;
+}
+
+.report-card-ai .card-header-ai {
+    padding: 14px 20px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.report-card-ai .card-header-ai .badge-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.report-card-ai .card-header-ai .badge {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.report-card-ai .card-header-ai .report-date {
+    font-size: 13px;
+    color: #6c757d;
+}
+
+.report-card-ai .card-body-ai {
+    padding: 18px 20px;
+}
+
+.report-card-ai .card-body-ai .report-summary {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.report-card-ai .card-body-ai .report-preview {
+    font-size: 14px;
+    color: #495057;
+    line-height: 1.6;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.report-card-ai .card-body-ai .report-meta {
+    margin-top: 10px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: #6c757d;
+}
+
+.report-card-ai .card-footer-ai {
+    padding: 12px 20px;
+    background: #fff;
+    border-top: 1px solid #f1f3f5;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.report-card-ai .card-footer-ai .btn {
+    padding: 5px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-view-ai {
+    background: #3498db;
+    color: #fff;
+}
+.btn-view-ai:hover { background: #2980b9; color: #fff; }
+
+.btn-delete-ai {
+    background: #e74c3c;
+    color: #fff;
+}
+.btn-delete-ai:hover { background: #c0392b; color: #fff; }
+
+/* ============================================================
+   مودال عرض التفاصيل
+   ============================================================ */
+.modal-content-ai {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+
+.modal-content-ai .modal-header-ai {
+    border-bottom: 1px solid #e9ecef;
+    padding: 18px 24px;
+}
+
+.modal-content-ai .modal-header-ai .modal-title {
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.modal-content-ai .modal-body-ai {
+    padding: 24px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.modal-content-ai .modal-body-ai .analysis-text {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 16px 20px;
+    line-height: 1.8;
+    font-size: 15px;
+    color: #2c3e50;
+}
+
+.modal-content-ai .modal-body-ai .recommendations-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.modal-content-ai .modal-body-ai .recommendations-list li {
+    padding: 10px 16px;
+    background: #f0f8ff;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    border-right: 3px solid #3498db;
+}
+
+.modal-content-ai .modal-body-ai .alerts-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.modal-content-ai .modal-body-ai .alerts-list li {
+    padding: 10px 16px;
+    background: #fff3cd;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    border-right: 3px solid #ffc107;
+    color: #856404;
+}
+
+.modal-content-ai .modal-footer-ai {
+    border-top: 1px solid #e9ecef;
+    padding: 14px 24px;
+}
+
+/* ============================================================
+   حالة عدم وجود تقارير
+   ============================================================ */
+.empty-state-ai {
+    text-align: center;
+    padding: 60px 20px;
+    background: #fff;
+    border-radius: 14px;
+    border: 2px dashed #dee2e6;
+}
+
+.empty-state-ai .empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    display: block;
+}
+
+.empty-state-ai .empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.empty-state-ai .empty-desc {
+    color: #6c757d;
+    font-size: 15px;
+}
+
+.empty-state-ai .btn {
+    margin-top: 16px;
+}
+
+/* ============================================================
+   حالة التحميل
+   ============================================================ */
+.loading-ai {
+    text-align: center;
+    padding: 40px;
+}
+
+.loading-ai .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e9ecef;
+    border-top-color: #3498db;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   الاستجابة للشاشات الصغيرة
+   ============================================================ */
+@media (max-width: 768px) {
+    .ai-archive-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .stats-cards {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .filter-section-ai {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .filter-group-ai {
+        min-width: 100%;
+    }
+    
+    .filter-actions-ai {
+        flex-direction: column;
+    }
+    
+    .report-card-ai .card-header-ai {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .report-card-ai .card-footer-ai {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .ai-archive-header h2 {
+        font-size: 20px;
+    }
+    
+    .report-card-ai .card-body-ai .report-summary {
+        font-size: 14px;
+    }
+}
+
+/* ============================================================
+   وضع الطباعة
+   ============================================================ */
+@media print {
+    .filter-section-ai,
+    .filter-actions-ai,
+    .report-card-ai .card-footer-ai .btn {
+        display: none !important;
+    }
+    
+    .report-card-ai {
+        border: 1px solid #ccc !important;
+        page-break-inside: avoid;
+    }
+    
+    .report-card-ai .card-header-ai {
+        background: #f1f1f1 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}

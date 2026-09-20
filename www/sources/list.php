@@ -5,7 +5,9 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 include '../includes/header.php';
 
+// ============================================================
 // معالجة إضافة مصدر جديد
+// ============================================================
 $message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_source'])) {
     requireCSRFToken();
@@ -29,14 +31,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_source'])) {
     }
 }
 
-// حذف مصدر
+// ============================================================
+// حذف مصدر (مع التحقق من الارتباطات في كلا الجدولين)
+// ============================================================
 if (isset($_GET['delete'])) {
     $id = (int)$_GET['delete'];
-    // التحقق من وجود اقترانات
-    $check = $pdo->prepare("SELECT COUNT(*) FROM deductions WHERE source_id = ?");
-    $check->execute([$id]);
-    if ($check->fetchColumn() > 0) {
-        $message = "⚠️ لا يمكن حذف هذا المصدر لأنه مرتبط باقتطاعات";
+    
+    // التحقق من وجود اقترانات في deductions أو monthly_installments
+    $stmt = $pdo->prepare("
+        SELECT 
+            (SELECT COUNT(*) FROM deductions WHERE source_id = ?) +
+            (SELECT COUNT(*) FROM monthly_installments WHERE source_id = ?) as total
+    ");
+    $stmt->execute([$id, $id]);
+    $total = $stmt->fetchColumn();
+    
+    if ($total > 0) {
+        $message = "⚠️ لا يمكن حذف هذا المصدر لأنه مرتبط باقتطاعات (في deductions أو monthly_installments)";
     } else {
         $stmt = $pdo->prepare("DELETE FROM sources WHERE id = ?");
         $stmt->execute([$id]);
@@ -46,9 +57,16 @@ if (isset($_GET['delete'])) {
     }
 }
 
-// جلب قائمة المصادر
+// ============================================================
+// جلب قائمة المصادر مع عدد الاقتطاعات من كلا الجدولين
+// ============================================================
 $sources = $pdo->query("SELECT * FROM sources ORDER BY name")->fetchAll();
 $totalSources = count($sources);
+
+// حساب الإحصائيات الكلية (للبطاقات)
+$totalDeductions = $pdo->query("SELECT COUNT(*) FROM deductions")->fetchColumn();
+$totalPhoneInstallments = $pdo->query("SELECT COUNT(*) FROM monthly_installments WHERE source_id = 999")->fetchColumn();
+$totalAll = $totalDeductions + $totalPhoneInstallments;
 
 $csrf_token = generateCSRFToken();
 ?>
@@ -70,14 +88,25 @@ $csrf_token = generateCSRFToken();
     .disabled-delete { background: #6c757d; color: #ddd; padding: 4px 12px; border-radius: 20px; font-size: 12px; display: inline-block; cursor: not-allowed; }
     .search-box { margin-bottom: 20px; }
     .search-box input { width: 300px; padding: 8px 15px; border-radius: 30px; border: 1px solid #ccc; }
+    .badge-phone { background: #6f42c1; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; display: inline-block; margin-right: 5px; }
 </style>
 
 <div class="sources-container">
     <h2>📁 مصادر البيانات</h2>
     
     <div class="stats-grid">
-        <div class="stat-card" style="border-bottom-color: #2a5298;"><div>📊 إجمالي المصادر</div><div class="number"><?= $totalSources ?></div></div>
-        <div class="stat-card" style="border-bottom-color: #28a745;"><div>✅ نشطة</div><div class="number"><?= $totalSources ?></div></div>
+        <div class="stat-card" style="border-bottom-color: #2a5298;">
+            <div>📊 إجمالي المصادر</div>
+            <div class="number"><?= $totalSources ?></div>
+        </div>
+        <div class="stat-card" style="border-bottom-color: #28a745;">
+            <div>📋 إجمالي الاقتطاعات (جميع المصادر)</div>
+            <div class="number"><?= number_format($totalAll) ?></div>
+        </div>
+        <div class="stat-card" style="border-bottom-color: #6f42c1;">
+            <div>📱 أقساط الهواتف</div>
+            <div class="number"><?= number_format($totalPhoneInstallments) ?></div>
+        </div>
     </div>
 
     <?php if ($message): ?>
@@ -107,21 +136,38 @@ $csrf_token = generateCSRFToken();
             </thead>
             <tbody>
                 <?php $i=1; foreach ($sources as $src):
-                    $countDed = $pdo->prepare("SELECT COUNT(*) FROM deductions WHERE source_id = ?");
-                    $countDed->execute([$src['id']]);
-                    $dedCount = $countDed->fetchColumn();
+                    // حساب الاقتطاعات من كلا الجدولين
+                    $stmt = $pdo->prepare("
+                        SELECT 
+                            (SELECT COUNT(*) FROM deductions WHERE source_id = ?) +
+                            (SELECT COUNT(*) FROM monthly_installments WHERE source_id = ?) as total_count
+                    ");
+                    $stmt->execute([$src['id'], $src['id']]);
+                    $totalCount = $stmt->fetchColumn();
+                    
+                    $isPhone = ($src['id'] == 999);
                 ?>
                 <tr class="source-row">
                     <td><?= $i++ ?></td>
-                    <td><?= htmlspecialchars($src['name']) ?></td>
-                    <td><?= $dedCount ?> اقتطاع</span></small></td>
                     <td>
-                        <?php if ($dedCount > 0): ?>
+                        <?= htmlspecialchars($src['name']) ?>
+                        <?php if ($isPhone): ?>
+                            <span class="badge-phone">📱 هاتف</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?= $totalCount ?> اقتطاع
+                        <?php if ($isPhone && $totalCount == 0): ?>
+                            <small style="color:#6f42c1;">(تأكد من توليد الأقساط)</small>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if ($totalCount > 0): ?>
                             <span class="disabled-delete">🔒 لا يمكن الحذف (مرتبط)</span>
                         <?php else: ?>
                             <a href="?delete=<?= $src['id'] ?>" class="btn-delete" onclick="return confirm('هل أنت متأكد من حذف هذا المصدر؟')">🗑️ حذف</a>
                         <?php endif; ?>
-                     </span></small></td>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

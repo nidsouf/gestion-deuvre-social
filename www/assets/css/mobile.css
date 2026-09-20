@@ -1,0 +1,188 @@
+/* ============================================================
+   Mobile-specific styles
+============================================================ */
+
+/* ============ تحسينات عامة للجوال ============ */
+@media (max-width: 768px) {
+    
+    /* منع التكبير التلقائي في iOS */
+    input, select, textarea {
+        font-size: 16px !important;
+    }
+    
+    /* حشوة أكبر للأزرار */
+    button, .btn, .btn-sm {
+        min-height: 44px;
+        padding: 12px 20px;
+    }
+    
+    /* إخفاء شريط الجانبي، استخدم قائمة سفلية */
+    .sidebar {
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        z-index: 10000;
+    }
+    .sidebar.open {
+        transform: translateX(0);
+    }
+    
+    /* المحتوى بعرض كامل */
+    .main-content {
+        margin-right: 0 !important;
+        padding: 10px !important;
+    }
+    
+    /* جداول قابلة للتمرير */
+    .table-responsive, .data-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    table {
+        min-width: 600px;
+    }
+    
+    /* بطاقات أصغر */
+    .stats-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+        gap: 10px !important;
+    }
+    
+    .stat-card {
+        padding: 12px !important;
+    }
+    
+    .stat-card .number {
+        font-size: 18px !important;
+    }
+    
+    .stat-card h3 {
+        font-size: 12px !important;
+    }
+    
+    /* النماذج */
+    .form-row {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Modal */
+    .modal-dialog {
+        margin: 10px !important;
+        max-width: calc(100% - 20px) !important;
+    }
+    
+    /* الطباعة */
+    .no-print-mobile { display: none !important; }
+}
+
+/* ============ Safe Area (iPhone X+) ============ */
+@supports (padding: env(safe-area-inset-bottom)) {
+    body {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    
+    .bottom-nav {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+/* ============ قائمة سفلية للجوال ============ */
+.bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    box-shadow: 0 -2px 20px rgba(0,0,0,0.1);
+    z-index: 9999;
+    border-top: 1px solid #e9ecef;
+}
+
+@media (max-width: 768px) {
+    .bottom-nav {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        height: 60px;
+    }
+    
+    .bottom-nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        color: #6c757d;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 5px;
+        transition: all 0.2s;
+        position: relative;
+    }
+    
+    .bottom-nav-item .icon {
+        font-size: 20px;
+        margin-bottom: 3px;
+    }
+    
+    .bottom-nav-item.active {
+        color: #2a5298;
+    }
+    
+    .bottom-nav-item.active::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 30px;
+        height: 3px;
+        background: #2a5298;
+        border-radius: 0 0 3px 3px;
+    }
+    
+    .bottom-nav-item:active {
+        background: #f8f9fa;
+    }
+    
+    /* المحتوى لا يتداخل مع القائمة السفلية */
+    .main-content {
+        padding-bottom: 80px !important;
+    }
+}
+
+/* ============ تحسينات اللمس ============ */
+@media (hover: none) and (pointer: coarse) {
+    /* إزالة hover effects على اللمس */
+    *:hover { transition: none; }
+    
+    /* تكبير مناطق النقر */
+    a, button {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    
+    /* Scroll أفق أكثر سلاسة */
+    .table-responsive {
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+    }
+}
+
+/* ============ الداكن للجوال ============ */
+@media (max-width: 768px) {
+    body.dark-mode .bottom-nav {
+        background: #161b22;
+        border-top-color: #30363d;
+    }
+    
+    body.dark-mode .bottom-nav-item {
+        color: #8b949e;
+    }
+    
+    body.dark-mode .bottom-nav-item.active {
+        color: #58a6ff;
+    }
+}

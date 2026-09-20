@@ -150,7 +150,7 @@ include '../includes/header.php';
             <input type="number" name="amount" step="0.01" min="0" required>
         </div>
         <button type="submit" class="btn-save">💳 تأكيد التسديد</button>
-        <a href="list.php" class="btn-cancel">🔙 إلغاء</a>
+        <a href="view.php?id=<?= $id ?>" class="btn-cancel">🔙 إلغاء</a>
     </form>
 </div>
 

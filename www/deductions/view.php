@@ -1,4 +1,7 @@
 <?php
+/**
+ * deductions/view.php - عرض تفاصيل الاقتطاع مع الأقساط
+ */
 ob_start();
 session_start();
 require_once '../includes/auth_check.php';
@@ -6,265 +9,301 @@ require_once '../config/database.php';
 require_once '../includes/security.php';
 require_once '../includes/functions.php';
 
-// تعريف safeFormatDate إن لم تكن موجودة
-if (!function_exists('safeFormatDate')) {
-    function safeFormatDate($date) {
-        if (empty($date) || $date === '0000-00-00' || $date === '1970-01-01') return '—';
-        return date('d/m/Y', strtotime($date));
-    }
-}
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if (!$id) {
-    $_SESSION['toast'] = ['message' => 'اقتطاع غير صالح', 'type' => 'error', 'duration' => 3000];
-    header("Location: list.php");
+    header('Location: list.php');
     exit;
 }
 
-// ========== جلب بيانات الاقتطاع ==========
+// جلب بيانات الاقتطاع
 $stmt = $pdo->prepare("
-    SELECT d.*, e.name as employee_name, e.category, e.account_number, s.name as source_name
+    SELECT d.*, e.name as employee_name, e.account_number, e.category as contract_type
     FROM deductions d
     JOIN employees e ON d.employee_id = e.id
-    JOIN sources s ON d.source_id = s.id
     WHERE d.id = ?
 ");
 $stmt->execute([$id]);
-$ded = $stmt->fetch();
+$deduction = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$ded) {
-    $_SESSION['toast'] = ['message' => 'الاقتطاع غير موجود', 'type' => 'error', 'duration' => 3000];
-    header("Location: list.php");
+if (!$deduction) {
+    header('Location: list.php?error=notfound');
     exit;
 }
 
-// ========== جلب الأقساط (الإصلاح: يجب أن يكون هنا) ==========
-$stmtInst = $pdo->prepare("
-    SELECT id, year, month, amount, is_paid, is_postponed, paid_date
-    FROM monthly_installments
+// جلب الأقساط مرتبة حسب السنة والشهر
+$stmt = $pdo->prepare("
+    SELECT * FROM monthly_installments
     WHERE deduction_id = ?
-    ORDER BY year, month
+    ORDER BY year ASC, month ASC
 ");
-$stmtInst->execute([$id]);
-$installments = $stmtInst->fetchAll();
+$stmt->execute([$id]);
+$installments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// ========== حساب المدفوع والمتبقي ==========
-$monthly = $ded['monthly_amount'];
-$totalMonths = $ded['total_months'];
-$credit_balance = $ded['credit_balance'];
-
-// حساب المبلغ الإجمالي من الأقساط الفعلية (وليست من total_months)
-$totalAmount = 0;
-$paidAmount = 0;
-foreach ($installments as $inst) {
-    $totalAmount += $inst['amount'];
-    if ($inst['is_paid']) {
-        $paidAmount += $inst['amount'];
+// جلب معلومات التأجيل لكل قسط (للعرض)
+$postponementInfo = [];
+if (!empty($installments)) {
+    $ids = array_column($installments, 'id');
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $pdo->prepare("
+        SELECT installment_id, original_month, new_month, reason
+        FROM installment_postponements
+        WHERE installment_id IN ($placeholders)
+        ORDER BY installment_id
+    ");
+    $stmt->execute($ids);
+    $postponements = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($postponements as $p) {
+        $postponementInfo[$p['installment_id']] = $p;
     }
 }
-$remainingAmount = $totalAmount - $paidAmount;
-if ($remainingAmount < 0) $remainingAmount = 0;
 
-// ========== جلب الدفعات المقدمة النشطة ==========
-$stmtEarly = $pdo->prepare("
-    SELECT * FROM early_payments
+// حساب المبالغ من الأقساط الفعلية
+$totalAmount = 0;
+$paidAmount = 0;
+$remainingAmount = 0;
+$paidCount = 0;
+$remainingCount = 0;
+
+foreach ($installments as $inst) {
+    $amount = (float)$inst['amount'];
+    $totalAmount += $amount;
+    
+    if ($inst['is_paid'] == 1) {
+        $paidAmount += $amount;
+        $paidCount++;
+    } else {
+        $remainingAmount += $amount;
+        $remainingCount++;
+    }
+}
+
+// جلب الدفعات المقدمة
+$stmt = $pdo->prepare("
+    SELECT * FROM early_payments 
     WHERE deduction_id = ? AND is_reversed = 0
-    ORDER BY payment_date DESC
+    ORDER BY id DESC
 ");
-$stmtEarly->execute([$id]);
-$early_payments = $stmtEarly->fetchAll();
-$totalEarly = array_sum(array_column($early_payments, 'amount'));
+$stmt->execute([$id]);
+$earlyPayments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$pageTitle = 'تفاصيل الاقتطاع';
 include '../includes/header.php';
 ?>
 
 <style>
-    .details-container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 20px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; margin-bottom: 20px; }
-    .info-item { padding: 8px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
-    .info-label { font-weight: bold; color: #555; }
-    .info-value { font-weight: 500; }
-    .remaining-box { background: #e3f2fd; padding: 15px; border-radius: 15px; margin: 20px 0; text-align: center; }
-    .remaining-box .amount { font-size: 28px; font-weight: bold; color: #2a5298; }
-    table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-    th { background: #2a5298; color: white; }
-    .section-title { font-size: 18px; font-weight: bold; margin: 25px 0 10px; border-right: 4px solid #2a5298; padding-right: 10px; }
-    .btn-back { display: inline-block; margin-top: 20px; background: #6c757d; color: white; padding: 8px 20px; border-radius: 30px; text-decoration: none; }
-    .badge-paid { background: #28a745; color: white; padding: 4px 10px; border-radius: 20px; }
-    .badge-postponed { background: #ffc107; color: #333; padding: 4px 10px; border-radius: 20px; }
-    .badge-overdue { background: #dc3545; color: white; padding: 4px 10px; border-radius: 20px; }
-    .badge-current { background: #ff9800; color: white; padding: 4px 10px; border-radius: 20px; }
-    .badge-future { background: #6c757d; color: white; padding: 4px 10px; border-radius: 20px; }
-    .early-summary { background: #f8f0ff; border: 2px solid #6c3483; padding: 10px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
-    .early-summary .label { font-weight: bold; }
-    .early-summary .value { font-size: 20px; font-weight: bold; color: #6c3483; }
-    .note-early { font-size: 12px; color: #6c3483; background: #f3e8ff; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+    .detail-card { background: #fff; border-radius: 16px; padding: 20px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid #e9ecef; margin-bottom: 20px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
+    .detail-grid .item { padding: 6px 0; }
+    .detail-grid .item strong { color: #2c3e50; font-weight: 700; display: block; font-size: 13px; color: #6c757d; }
+    .detail-grid .item .value { font-size: 16px; font-weight: 600; color: #1a1a2e; }
+    .detail-grid .item .value.highlight { color: #1E5A4A; }
+    .detail-grid .item .value.danger { color: #dc3545; }
+    .detail-grid .item .value.success { color: #28a745; }
+    .status-badge { padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block; }
+    .status-paid { background: #d4edda; color: #155724; }
+    .status-postponed { background: #fff3cd; color: #856404; }
+    .status-future { background: #e2e3e5; color: #383d41; }
+    .status-unpaid { background: #f8d7da; color: #721c24; }
+    .action-buttons .btn { margin: 2px 4px; border-radius: 8px; padding: 6px 14px; font-size: 13px; }
+    .total-remaining-box { background: linear-gradient(135deg, #1E5A4A, #2E7D64); color: #fff; border-radius: 12px; padding: 16px 24px; text-align: center; margin-bottom: 20px; }
+    .total-remaining-box .label { font-size: 14px; opacity: 0.85; }
+    .total-remaining-box .amount { font-size: 28px; font-weight: 800; }
+    .btn-edit { background: #ffc107; color: #212529; border: none; }
+    .btn-edit:hover { background: #e0a800; color: #212529; }
+    .btn-postpone { background: #fd7e14; color: #fff; border: none; }
+    .btn-postpone:hover { background: #e36209; color: #fff; }
+    .btn-early { background: #9b59b6; color: #fff; border: none; }
+    .btn-early:hover { background: #8e44ad; color: #fff; }
+    .btn-period { background: #17a2b8; color: #fff; border: none; }
+    .btn-period:hover { background: #117a8b; color: #fff; }
+    .table-responsive { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; text-align: center; border-bottom: 1px solid #f0f0f0; }
+    th { background: #f8f9fa; font-weight: 700; color: #2c3e50; }
+    .alert { padding: 12px 20px; border-radius: 12px; background: #f8f9fa; color: #6c757d; }
+    .badge-original { background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+    .btn-print { background: linear-gradient(135deg, #1E5A4A, #2E7D64); color: #fff; border: none; }
+.btn-print:hover { background: linear-gradient(135deg, #164236, #1E5A4A); color: #fff; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(30, 90, 74, 0.3); }
 </style>
 
-<div class="details-container">
-    <h2>📄 تفاصيل الاقتطاع</h2>
+<div style="max-width: 1100px; margin: 0 auto;">
 
-    <div class="info-grid">
-        <div class="info-item"><span class="info-label">الموظف:</span><span class="info-value"><?= htmlspecialchars($ded['employee_name']) ?></span></div>
-        <div class="info-item"><span class="info-label">رقم الحساب:</span><span class="info-value"><?= htmlspecialchars($ded['account_number'] ?? '—') ?></span></div>
-        <div class="info-item"><span class="info-label">نوع العقد:</span><span class="info-value"><?= $ded['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?></span></div>
-        <div class="info-item"><span class="info-label">نوع الاقتطاع:</span><span class="info-value"><?= $ded['is_loan'] ? 'سلفة' : 'اقتطاع عادي' ?></span></div>
-        <div class="info-item"><span class="info-label">المبلغ الإجمالي:</span><span class="info-value"><?= number_format($totalAmount, 2) ?> دج</span></div>
-        <div class="info-item"><span class="info-label">القسط الشهري:</span><span class="info-value"><?= number_format($monthly, 2) ?> دج</span></div>
-        <div class="info-item"><span class="info-label">المتبقي:</span><span class="info-value"><?= number_format($remainingAmount, 2) ?> دج</span></div>
-        <div class="info-item"><span class="info-label">تاريخ البداية:</span><span class="info-value"><?= safeFormatDate($ded['start_date']) ?></span></div>
-        <div class="info-item"><span class="info-label">تاريخ النهاية:</span><span class="info-value"><?= safeFormatDate($ded['end_date']) ?></span></div>
-        <div class="info-item"><span class="info-label">تاريخ الصرف:</span><span class="info-value"><?= $ded['is_loan'] ? safeFormatDate($ded['grant_date']) : '—' ?></span></div>
-        <div class="info-item"><span class="info-label">الرصيد الدائن:</span><span class="info-value"><?= number_format($credit_balance, 2) ?> دج</span></div>
-        <?php if ($totalEarly > 0): ?>
-            <div class="info-item" style="background:#f3e8ff; border-radius:8px; padding:8px; grid-column: span 2; justify-content: center;">
-                <span class="info-label" style="color:#6c3483;">💰 إجمالي الدفعات المقدمة:</span>
-                <span class="info-value" style="font-size:18px; color:#6c3483; font-weight:bold;"><?= number_format($totalEarly, 2) ?> دج</span>
+    <h2 class="mb-4">📄 تفاصيل الاقتطاع</h2>
+
+    <!-- معلومات الاقتطاع -->
+    <div class="detail-card">
+        <div class="detail-grid">
+            <div class="item">
+                <strong>الموظف</strong>
+                <span class="value highlight"><?= htmlspecialchars($deduction['employee_name']) ?></span>
             </div>
-        <?php endif; ?>
+            <div class="item">
+                <strong>رقم الحساب</strong>
+                <span class="value"><?= htmlspecialchars($deduction['account_number'] ?? '—') ?></span>
+            </div>
+            <div class="item">
+                <strong>نوع العقد</strong>
+                <span class="value"><?= $deduction['contract_type'] == 'permanent' ? 'دائم' : 'متعاقد' ?></span>
+            </div>
+            <div class="item">
+                <strong>نوع الاقتطاع</strong>
+                <span class="value"><?= $deduction['is_loan'] ? 'سلفة' : 'اقتطاع شهري' ?></span>
+            </div>
+            <div class="item">
+                <strong>المبلغ الإجمالي (من الأقساط)</strong>
+                <span class="value highlight"><?= number_format($totalAmount, 2) ?> دج</span>
+            </div>
+            <div class="item">
+                <strong>القسط الشهري</strong>
+                <span class="value"><?= number_format($deduction['monthly_amount'], 2) ?> دج</span>
+            </div>
+            <div class="item">
+                <strong>المتبقي (من الأقساط)</strong>
+                <span class="value <?= $remainingAmount > 0 ? 'danger' : 'success' ?>">
+                    <?= number_format($remainingAmount, 2) ?> دج
+                </span>
+            </div>
+            <div class="item">
+                <strong>عدد الأقساط الكلية</strong>
+                <span class="value"><?= count($installments) ?></span>
+            </div>
+            <div class="item">
+                <strong>المسدد / المتبقي</strong>
+                <span class="value"><?= $paidCount ?> / <?= count($installments) - $paidCount ?></span>
+            </div>
+            <div class="item">
+                <strong>تاريخ البداية</strong>
+                <span class="value"><?= safeFormatDate($deduction['start_date']) ?></span>
+            </div>
+            <div class="item">
+                <strong>تاريخ النهاية</strong>
+                <span class="value"><?= safeFormatDate($deduction['end_date']) ?></span>
+            </div>
+            <div class="item">
+                <strong>تاريخ الصرف</strong>
+                <span class="value"><?= safeFormatDate($deduction['grant_date']) ?></span>
+            </div>
+        </div>
     </div>
+
+    <!-- المبلغ الإجمالي المتبقي للسداد -->
+    <div class="total-remaining-box">
+        <div class="label">💵 المبلغ الإجمالي المتبقي للسداد</div>
+        <div class="amount"><?= number_format($remainingAmount, 2) ?> دج</div>
+        <small style="opacity:0.7;">(<?= count($installments) - $paidCount ?> أقساط متبقية من أصل <?= count($installments) ?>)</small>
+    </div>
+
+    <!-- أزرار الإجراءات -->
+<div class="action-buttons mb-4 text-center">
+    <a href="edit.php?id=<?= $id ?>" class="btn btn-edit">✏️ تعديل</a>
+    <a href="postpone_period.php?id=<?= $id ?>" class="btn btn-period">⏰ تعديل الفترة</a>
+    <a href="postpone_installment.php?deduction_id=<?= $id ?>" class="btn btn-postpone">📅 تأجيل قسط</a>
+    <?php if ($deduction['is_loan'] && $remainingAmount > 0): ?>
+        <a href="early_payment.php?id=<?= $id ?>" class="btn btn-early">💰 تسديد مقدم</a>
+    <?php endif; ?>
     
-    <!-- ========== أزرار الإجراءات ========== -->
-<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
-    <a href="edit.php?id=<?= $id ?>" class="btn btn-warning" style="padding:8px 16px; border-radius:8px; text-decoration:none; color:white; background:#ffc107; display:inline-block;">
-        ✏️ تعديل
+    <!-- 🖨️ زر الطباعة الجديد -->
+    <a href="print.php?id=<?= $id ?>" target="_blank" class="btn btn-print" style="background: linear-gradient(135deg, #1E5A4A, #2E7D64); color: white;">
+        🖨️ طباعة الوصل
     </a>
-    <a href="postpone.php?id=<?= $id ?>" class="btn btn-info" style="padding:8px 16px; border-radius:8px; text-decoration:none; color:white; background:#17a2b8; display:inline-block;">
-        ⏰ تعديل الفترة
-    </a>
-    <a href="postpone_installment.php?id=<?= $id ?>" class="btn btn-warning" style="padding:8px 16px; border-radius:8px; text-decoration:none; color:white; background:#ff9800; display:inline-block;">
-        📅 تأجيل قسط
-    </a>
-    <?php if ($ded['is_loan']): ?>
-        <a href="early_payment.php?id=<?= $id ?>" class="btn btn-success" style="padding:8px 16px; border-radius:8px; text-decoration:none; color:white; background:#28a745; display:inline-block;">
-            💰 تسديد مقدم
-        </a>
-    <?php endif; ?>
-    <?php if (!empty($early_payments)): ?>
-        <?php foreach ($early_payments as $ep): ?>
-            <a href="undo_early_payment.php?id=<?= $ep['id'] ?>" class="btn btn-danger" style="padding:8px 16px; border-radius:8px; text-decoration:none; color:white; background:#dc3545; display:inline-block;">
-                ↩️ إلغاء التسديد
-            </a>
-        <?php endforeach; ?>
-    <?php endif; ?>
 </div>
 
-    <div class="remaining-box">
-        <div>💵 المبلغ الإجمالي المتبقي للسداد</div>
-        <div class="amount"><?= number_format($remainingAmount, 2) ?> دج</div>
-    </div>
-
-    <?php if (!empty($early_payments)): ?>
-        <div class="early-summary">
-            <span class="label">📌 دفعات مقدمة نشطة:</span>
-            <span class="value"><?= number_format($totalEarly, 2) ?> دج</span>
-            <span style="font-size:14px; color:#555;">
-                (<?= count($early_payments) ?> دفعة<?= count($early_payments) > 1 ? 'ات' : '' ?>)
-            </span>
-        </div>
-    <?php endif; ?>
-
-    <div class="section-title">📊 جدول الأقساط</div>
-    <?php if (empty($installments)): ?>
-        <p>لا توجد أقساط مسجلة.</p>
-    <?php else: ?>
-        <table>
-            <thead>
+    <!-- جدول الأقساط -->
+    <h4 class="mb-3">📊 جدول الأقساط</h4>
+    <div class="table-responsive" style="background:#fff; border-radius:16px; padding:0; border:1px solid #e9ecef;">
+        <table class="table table-striped table-hover mb-0">
+            <thead style="background:#f8f9fa;">
                 <tr>
                     <th>#</th>
                     <th>الشهر</th>
                     <th>المبلغ (دج)</th>
                     <th>الحالة</th>
-                    <th>تاريخ التسديد</th>
                     <th>ملاحظات</th>
                 </tr>
             </thead>
             <tbody>
-                <?php 
-                $i = 1;
-                $today = new DateTime();
-                $currentYear = (int)$today->format('Y');
-                $currentMonth = (int)$today->format('m');
-
-                foreach ($installments as $inst):
-                    $year = (int)$inst['year'];
-                    $month = (int)$inst['month'];
-                    $month_name = getMonthNameArabic($month);
-                    $is_early_affected = ($inst['amount'] > $monthly);
-                    $early_note = $is_early_affected ? '🟣 يشمل دفعة مقدمة' : '';
-
-                    if ($inst['is_postponed']) {
-                        $status = '⏰ مؤجل';
-                        $badge_class = 'badge-postponed';
-                        $paid_date = '—';
-                    } elseif ($inst['is_paid']) {
-                        $status = '✅ مسدد';
-                        $badge_class = 'badge-paid';
-                        $paid_date = safeFormatDate($inst['paid_date']);
-                    } elseif ($year < $currentYear || ($year == $currentYear && $month < $currentMonth)) {
-                        $status = '⏰ متأخر';
-                        $badge_class = 'badge-overdue';
-                        $paid_date = '—';
-                    } elseif ($year == $currentYear && $month == $currentMonth) {
-                        $status = '🔴 مستحق هذا الشهر';
-                        $badge_class = 'badge-current';
-                        $paid_date = '—';
-                    } else {
-                        $status = '📅 مستقبلي';
-                        $badge_class = 'badge-future';
-                        $paid_date = '—';
-                    }
+                <?php if (empty($installments)): ?>
+                    <tr><td colspan="5" class="text-center py-4">لا توجد أقساط مسجلة</td></tr>
+                <?php else:
+                    $index = 1;
+                    foreach ($installments as $inst):
+                        // اسم الشهر بالعربية
+                        $monthName = getMonthNameArabic($inst['month']) . ' ' . $inst['year'];
+                        $statusText = '';
+                        $statusClass = '';
+                        $notes = '';
+                        
+                        // التحقق من وجود معلومات تأجيل لهذا القسط
+                        $postInfo = $postponementInfo[$inst['id']] ?? null;
+                        $originalDate = '';
+                        if ($postInfo) {
+                            $origParts = explode('-', $postInfo['original_month']);
+                            $originalDate = getMonthNameArabic((int)$origParts[1]) . ' ' . $origParts[0];
+                        }
+                        
+                        if ($inst['is_paid'] == 1) {
+                            $statusText = '✅ مسدد';
+                            $statusClass = 'status-paid';
+                            $notes = 'تم التسديد';
+                        } elseif ($inst['is_postponed'] == 1) {
+                            $statusText = '⏰ مؤجل';
+                            $statusClass = 'status-postponed';
+                            $notes = 'مؤجل' . ($originalDate ? ' (كان ' . $originalDate . ')' : '');
+                        } elseif (strtotime($inst['year'] . '-' . $inst['month'] . '-01') > time()) {
+                            $statusText = '📅 مستقبلي';
+                            $statusClass = 'status-future';
+                            $notes = 'غير مستحق بعد';
+                        } else {
+                            $statusText = '❌ غير مسدد';
+                            $statusClass = 'status-unpaid';
+                            $notes = 'متأخر';
+                        }
                 ?>
                     <tr>
-                        <td><?= $i++ ?></td>
-                        <td><?= $month_name . ' ' . $year ?></td>
+                        <td><?= $index++ ?></td>
+                        <td><?= htmlspecialchars($monthName) ?></td>
                         <td><?= number_format($inst['amount'], 2) ?> دج</td>
-                        <td><span class="<?= $badge_class ?>"><?= $status ?></span></td>
-                        <td><?= $paid_date ?></td>
-                        <td>
-                            <?php if ($is_early_affected): ?>
-                                <span class="note-early"><?= $early_note ?></span>
-                            <?php else: ?>
-                                —
-                            <?php endif; ?>
-                        </td>
+                        <td><span class="status-badge <?= $statusClass ?>"><?= $statusText ?></span></td>
+                        <td><?= htmlspecialchars($notes) ?></td>
                     </tr>
                 <?php endforeach; ?>
+                <?php endif; ?>
             </tbody>
         </table>
-    <?php endif; ?>
+    </div>
 
-    <div class="section-title">📅 الدفعات المقدمة المسجلة</div>
-    <?php if (empty($early_payments)): ?>
-        <p>لا توجد دفعات مقدمة مسجلة.</p>
+    <!-- الدفعات المقدمة -->
+    <h4 class="mb-3 mt-4">📅 الدفعات المقدمة المسجلة</h4>
+    <?php if (empty($earlyPayments)): ?>
+        <div class="alert">لا توجد دفعات مقدمة مسجلة.</div>
     <?php else: ?>
-        <table>
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>التاريخ</th>
-                    <th>المبلغ (دج)</th>
-                    <th>عدد الأشهر المخصومة</th>
-                    <th>الحالة</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php $i=1; foreach ($early_payments as $ep): ?>
-                <tr>
-                    <td><?= $i++ ?></td>
-                    <td><?= safeFormatDate($ep['payment_date']) ?></td>
-                    <td><?= number_format($ep['amount'], 2) ?> دج</td>
-                    <td><?= $ep['months_paid'] ?> شهر</td>
-                    <td><span style="color:#28a745;">نشط</span></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+        <div class="table-responsive" style="background:#fff; border-radius:16px; padding:0; border:1px solid #e9ecef;">
+            <table class="table table-striped table-hover mb-0">
+                <thead style="background:#f8f9fa;">
+                    <tr>
+                        <th>#</th>
+                        <th>عدد الأشهر</th>
+                        <th>المبلغ (دج)</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $i=1; foreach ($earlyPayments as $ep): ?>
+                        <tr>
+                            <td><?= $i++ ?></td>
+                            <td><?= $ep['months_paid'] ?></td>
+                            <td><?= number_format($ep['amount'], 2) ?> دج</td>
+                            <td><span class="status-badge status-paid">✅ نشط</span></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     <?php endif; ?>
 
-    <div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
-        <a href="list.php" class="btn-back">⬅️ العودة للقائمة</a>
+    <div class="mt-4">
+        <a href="list.php" class="btn btn-secondary">⬅️ العودة إلى القائمة</a>
     </div>
 </div>
 

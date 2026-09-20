@@ -2,21 +2,16 @@
 /**
  * grants/employee_list.php - قائمة المنح الموزعة
  * مع إضافة بطاقات إحصائيات لكل نوع منحة
+ * ✅ رابط مباشر لصفحة الحذف (بدون مودال)
  */
 session_start();
 require_once __DIR__ . '/../includes/auth_check.php';
-// ensure correct path to database config so $pdo is defined
 require_once __DIR__ . '/../config/database.php';
 require_once '../includes/security.php';
 require_once '../includes/functions.php';
 require_once '../includes/common_helpers.php';
 require_once '../includes/grant_helpers.php';
 require_once '../includes/grant_table.php';
-
-// ============================================================
-// معالجة POST (التحديث، إعادة الحساب، الحذف) – كما هي سابقاً
-// ============================================================
-// ... (نفس الكود السابق، لا تغيير) ...
 
 // ============================================================
 // جلب البيانات
@@ -49,7 +44,18 @@ if ($search) {
     $sql .= " AND e.name LIKE :search";
     $params[':search'] = "%$search%";
 }
-$sql .= " ORDER BY eg.grant_date DESC, e.name ASC";
+// ✅ ترتيب زمني مع فاصل التاريخ (يدعم YYYY-MM-DD و DD/MM/YYYY)
+$sql .= " ORDER BY 
+    CASE 
+        WHEN eg.grant_date LIKE '____-__-__' THEN eg.grant_date
+        WHEN eg.grant_date LIKE '__/__/____' THEN 
+            substr(eg.grant_date, 7, 4) || '-' || 
+            substr(eg.grant_date, 4, 2) || '-' || 
+            substr(eg.grant_date, 1, 2)
+        ELSE eg.grant_date
+    END DESC, 
+    e.name ASC
+";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
@@ -79,7 +85,7 @@ foreach ($grants as $g) {
     $grantStats[$typeName]['total'] += $amount;
 }
 
-// ترتيب البطاقات حسب عدد المنح تنازلياً (الأكثر شيوعاً أولاً)
+// ترتيب البطاقات حسب عدد المنح تنازلياً
 uasort($grantStats, fn($a, $b) => $b['count'] - $a['count']);
 
 // ============================================================
@@ -87,8 +93,10 @@ uasort($grantStats, fn($a, $b) => $b['count'] - $a['count']);
 // ============================================================
 $permanent = filterGrantsByCategory($grants, 'Permanent');
 $contract = filterGrantsByCategory($grants, 'Contract');
-sortGrantsByName($permanent);
-sortGrantsByName($contract);
+
+// ✅ ترتيب زمني (الأحدث أولاً) بدل الترتيب بالاسم
+sortGrantsByDateDesc($permanent);
+sortGrantsByDateDesc($contract);
 
 $totalPerm = calculateGrantTotal($permanent);
 $totalCont = calculateGrantTotal($contract);
@@ -125,7 +133,9 @@ include '../includes/header.php';
     <div class="stats-grid" style="margin-bottom: 20px;">
         <?php foreach ($grantStats as $name => $stats): ?>
             <div class="stat-card grant-type" style="border-bottom-color: #6c3483; background: #f8f0ff; min-width: 180px;">
-                <div class="label" style="font-weight: bold; font-size: 16px;">🎁 <?= htmlspecialchars($name) ?></div>
+                <div class="label" style="font-weight: bold; font-size: 16px;">
+                    🎁 <?= htmlspecialchars($name) ?>
+                </div>
                 <div class="number" style="font-size: 20px; margin: 5px 0;">
                     <?= $stats['count'] ?> منحة
                 </div>
@@ -137,7 +147,9 @@ include '../includes/header.php';
     </div>
     <?php endif; ?>
     
+    <!-- ============================================================ -->
     <!-- الفلاتر -->
+    <!-- ============================================================ -->
     <div class="filters">
         <form method="GET" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; width:100%;">
             <div class="filter-group">
@@ -145,7 +157,9 @@ include '../includes/header.php';
                 <select name="grant_id">
                     <option value="0">جميع الأنواع</option>
                     <?php foreach ($grantsList as $g): ?>
-                        <option value="<?= $g['id'] ?>" <?= ($grant_filter == $g['id']) ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
+                        <option value="<?= $g['id'] ?>" <?= ($grant_filter == $g['id']) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($g['name']) ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -160,9 +174,13 @@ include '../includes/header.php';
         </form>
     </div>
     
+    <!-- ============================================================ -->
     <!-- الجداول -->
+    <!-- ============================================================ -->
     <?php if (empty($grants)): ?>
-        <div style="background:#f8d7da; padding:20px; text-align:center;">⚠️ لا توجد منح مسجلة</div>
+        <div style="background:#f8d7da; padding:20px; text-align:center; border-radius:10px;">
+            ⚠️ لا توجد منح مسجلة
+        </div>
     <?php else: ?>
         <?php renderGrantTable($permanent, '👔 الموظفون الدائمون', $totalPerm, true, $csrf_token, $search, $grant_filter); ?>
         <?php renderGrantTable($contract, '👕 الموظفون المتعاقدون', $totalCont, true, $csrf_token, $search, $grant_filter); ?>
@@ -174,38 +192,5 @@ include '../includes/header.php';
         </div>
     <?php endif; ?>
 </div>
-
-<!-- مودال تأكيد الحذف -->
-<div id="deleteModal" class="modal-overlay">
-    <div class="modal-box">
-        <h3>⚠️ تأكيد الحذف</h3>
-        <p>هل أنت متأكد من حذف منحة <strong id="deleteEmployeeName"></strong>؟</p>
-        <form method="POST" id="deleteForm" novalidate>
-            <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
-            <input type="hidden" name="grant_id" id="deleteGrantId">
-            <input type="hidden" name="delete_grant" value="1">
-            <input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>">
-            <input type="hidden" name="grant_filter" value="<?= $grant_filter ?>">
-            <div class="actions">
-                <button type="button" class="btn-cancel-modal" onclick="closeDeleteModal()">إلغاء</button>
-                <button type="submit" class="btn-confirm">🗑️ نعم، حذف</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<script>
-    function openDeleteModal(grantId, employeeName) {
-        document.getElementById('deleteGrantId').value = grantId;
-        document.getElementById('deleteEmployeeName').textContent = employeeName;
-        document.getElementById('deleteModal').classList.add('active');
-    }
-    function closeDeleteModal() {
-        document.getElementById('deleteModal').classList.remove('active');
-    }
-    document.getElementById('deleteModal').addEventListener('click', function(e) {
-        if (e.target === this) closeDeleteModal();
-    });
-</script>
 
 <?php include '../includes/footer.php'; ?>

@@ -2,6 +2,7 @@
 /**
  * deductions/helpers.php
  * دوال مساعدة لوحدة الاقتطاعات - متوافقة مع هيكل الجدول الفعلي
+ * تم إصلاح خطأ بناء الجملة في getDeductionsList
  */
 
 /**
@@ -49,12 +50,6 @@ function getDeductionStats(PDO $pdo, $filters = []) {
 }
 
 /**
- * الحصول على قائمة الاقتطاعات مع بيانات الموظفين
- */
-/**
- * الحصول على قائمة الاقتطاعات مع بيانات الموظفين والأقساط المحسوبة من monthly_installments
- */
-/**
  * الحصول على قائمة الاقتطاعات مع بيانات الموظفين والأقساط المحسوبة من monthly_installments
  */
 function getDeductionsList(PDO $pdo, $filters = [], $limit = 50, $offset = 0) {
@@ -91,41 +86,41 @@ function getDeductionsList(PDO $pdo, $filters = [], $limit = 50, $offset = 0) {
 
     $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-    // داخل دالة getDeductionsList، في استعلام SELECT، أضف source_id و source_name
-$query = "
-    SELECT 
-        d.*,
-        s.name as source_name,
-        e.name as full_name,
-        e.account_number,
-        e.category as contract_type,
-        CASE 
-            WHEN d.end_date < date('now') THEN 'منتهي'
-            WHEN d.end_date < date('now', '+30 days') THEN 'ينتهي قريباً'
-            ELSE 'نشط'
-        END as status,
-        COALESCE((
-            SELECT COUNT(*) 
-            FROM monthly_installments mi 
-            WHERE mi.deduction_id = d.id AND mi.is_paid = 1
-        ), 0) as paid_count,
-        COALESCE((
-            SELECT COUNT(*) 
-            FROM monthly_installments mi 
-            WHERE mi.deduction_id = d.id AND mi.is_paid = 0 AND mi.is_postponed = 0
-        ), 0) as unpaid_count,
-        COALESCE((
-            SELECT COUNT(*) 
-            FROM monthly_installments mi 
-            WHERE mi.deduction_id = d.id
-        ), 0) as total_installments
-    FROM deductions d
-    JOIN employees e ON d.employee_id = e.id
-    JOIN sources s ON d.source_id = s.id
-    $whereClause
-    ORDER BY d.created_at DESC
-    LIMIT ? OFFSET ?
-";
+    // ✅ استعلام صحيح مع تعريفات subquery صحيحة
+    $query = "
+        SELECT 
+            d.*,
+            s.name as source_name,
+            e.name as full_name,
+            e.account_number,
+            e.category as contract_type,
+            CASE 
+                WHEN d.end_date < date('now') THEN 'منتهي'
+                WHEN d.end_date < date('now', '+30 days') THEN 'ينتهي قريباً'
+                ELSE 'نشط'
+            END as status,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM monthly_installments mi 
+                WHERE mi.deduction_id = d.id AND mi.is_paid = 1
+            ), 0) as paid_count,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM monthly_installments mi 
+                WHERE mi.deduction_id = d.id AND mi.is_paid = 0
+            ), 0) as unpaid_count,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM monthly_installments mi 
+                WHERE mi.deduction_id = d.id
+            ), d.total_months) as total_installments
+        FROM deductions d
+        JOIN employees e ON d.employee_id = e.id
+        JOIN sources s ON d.source_id = s.id
+        $whereClause
+        ORDER BY d.created_at DESC
+        LIMIT ? OFFSET ?
+    ";
 
     $params[] = $limit;
     $params[] = $offset;

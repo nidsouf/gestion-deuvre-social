@@ -64,6 +64,26 @@ if (!function_exists('sortGrantsByName')) {
     }
 }
 
+/**
+ * ترتيب المنح حسب التاريخ (الأحدث أولاً)
+ */
+if (!function_exists('sortGrantsByDateDesc')) {
+    function sortGrantsByDateDesc(&$grants) {
+        usort($grants, function($a, $b) {
+            $dateA = strtotime($a['grant_date'] ?? '1970-01-01');
+            $dateB = strtotime($b['grant_date'] ?? '1970-01-01');
+            
+            // التاريخ الأحدث أولاً
+            if ($dateB !== $dateA) {
+                return $dateB - $dateA;
+            }
+            
+            // إذا تساوى التاريخ، رتّب بالاسم
+            return strcasecmp($a['employee_name'] ?? '', $b['employee_name'] ?? '');
+        });
+    }
+}
+
 if (!function_exists('filterGrantsByCategory')) {
     /**
      * تصفية المنح حسب فئة الموظف (دائم / متعاقد)

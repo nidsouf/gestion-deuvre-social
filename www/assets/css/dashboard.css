@@ -323,3 +323,136 @@
         grid-template-columns: 1fr;
     }
 }
+/* ============================================================
+   DARK MODE - dashboard.css
+   ============================================================ */
+body.dark-mode .dashboard-tabs {
+    background: var(--surface, #1A1228) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .tab-btn {
+    background: #120B1E !important;
+    color: #B0A0C0 !important;
+}
+body.dark-mode .tab-btn:hover { background: #2A1A3A !important; color: #E8E0F0 !important; }
+body.dark-mode .tab-btn.active {
+    background: #4A2A7A !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 4px 12px rgba(106, 74, 154, 0.4) !important;
+}
+
+body.dark-mode .nav-card {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .nav-card:hover {
+    border-color: #6A4A9A !important;
+    box-shadow: 0 8px 20px rgba(106, 74, 154, 0.2) !important;
+}
+body.dark-mode .nav-card i { color: #BA8AEA !important; }
+body.dark-mode .nav-card span { color: #E8E0F0 !important; }
+
+body.dark-mode .stat-card {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+}
+body.dark-mode .stat-card .number { color: #C8B8F0 !important; }
+body.dark-mode .stat-card .sub { color: #A898C0 !important; }
+body.dark-mode .stat-card .badge { background: #2A1A3A !important; color: #B0A0C0 !important; }
+body.dark-mode .stat-card.employees { border-bottom-color: #6A4A9A !important; }
+body.dark-mode .stat-card.sources { border-bottom-color: #A87A8A !important; }
+body.dark-mode .stat-card.deductions { border-bottom-color: #6A9A7A !important; }
+body.dark-mode .stat-card.amount { border-bottom-color: #9A6ACA !important; }
+body.dark-mode .stat-card.grants { border-bottom-color: #B04A4A !important; }
+body.dark-mode .stat-card.budget { border-bottom-color: #6A9AAA !important; }
+body.dark-mode .stat-card.year-grant { border-bottom-color: #6A9A7A !important; }
+body.dark-mode .stat-card.loans { border-bottom-color: #D65283 !important; }
+body.dark-mode .stat-card.avg { border-bottom-color: #8A9AAA !important; }
+body.dark-mode .stat-card.djezy { border-bottom-color: #C88A4A !important; }
+body.dark-mode .stat-card.total-monthly { border-bottom-color: #9A6ACA !important; }
+body.dark-mode .stat-card.refunds { border-bottom-color: #C88A4A !important; }
+body.dark-mode .stat-card.overdue { border-bottom-color: #B04A4A !important; }
+body.dark-mode .stat-card.cheques { border-bottom-color: #6A9A8A !important; }
+
+body.dark-mode .budget-bar-wrap { background: #2A1A3A !important; }
+body.dark-mode .budget-bar-fill { background: linear-gradient(90deg, #6A4A9A, #9A6ACA) !important; }
+
+body.dark-mode .chart-container {
+    background: var(--surface, #1A1228) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .chart-container h4 { color: #D8C8F0 !important; }
+
+body.dark-mode .data-table {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+}
+body.dark-mode .data-table th {
+    background: #2A1A3A !important;
+    color: #D8C8F0 !important;
+    border-color: #3A2A4A !important;
+}
+body.dark-mode .data-table td {
+    color: #E8E0F0 !important;
+    border-color: #3A2A4A !important;
+}
+body.dark-mode .data-table .no-data { color: #8A7A9A !important; }
+body.dark-mode .data-table tr:nth-child(even) { background: #120B1E !important; }
+body.dark-mode .data-table tr:hover td { background: #2A1A3A !important; }
+
+body.dark-mode .badge-grant {
+    background: #3A2A1A !important;
+    color: #F0D080 !important;
+}
+body.dark-mode .badge-loan {
+    background: #1A2A1A !important;
+    color: #8ACC9A !important;
+}
+body.dark-mode .badge-installment {
+    background: #1A2A3A !important;
+    color: #A0C0F0 !important;
+}
+body.dark-mode .badge-refund {
+    background: #3A2A1A !important;
+    color: #F0D080 !important;
+}
+body.dark-mode .badge-default {
+    background: #2A1A2A !important;
+    color: #A898C0 !important;
+}
+
+body.dark-mode .section-header { color: #E8E0F0 !important; }
+body.dark-mode .btn-sm {
+    background: #4A2A7A !important;
+    color: #FFFFFF !important;
+}
+body.dark-mode .btn-sm:hover { background: #5A3A8A !important; }
+body.dark-mode .btn-sm.btn-success {
+    background: #2A5A3A !important;
+    color: #FFFFFF !important;
+}
+body.dark-mode .btn-sm.btn-info {
+    background: #2A4A6A !important;
+    color: #FFFFFF !important;
+}
+
+body.dark-mode .year-filter {
+    background: var(--surface, #1A1228) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .year-filter select {
+    background: #120B1E !important;
+    color: #E8E0F0 !important;
+    border-color: #3A2A4A !important;
+}
+
+body.dark-mode .notification-item {
+    border-color: #3A2A4A !important;
+    color: #E8E0F0 !important;
+}
+body.dark-mode .notification-item:hover { background: #2A1A3A !important; }
+body.dark-mode .notification-item.unread {
+    background: #1A2A1A !important;
+    border-right-color: #6A9A7A !important;
+}

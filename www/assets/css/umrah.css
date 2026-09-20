@@ -40,3 +40,96 @@
     .draws-table th, .draws-table td { padding: 8px 6px; }
 }
 @media (max-width: 480px) { .stats-grid { grid-template-columns: 1fr; } }
+/* ============================================================
+   DARK MODE - umrah.css
+   ============================================================ */
+body.dark-mode .umrah-container { color: #E8E0F0; }
+body.dark-mode .umrah-header {
+    background: linear-gradient(135deg, #2A1A4A, #4A2A7A) !important;
+}
+body.dark-mode .umrah-header h2 { color: #FFFFFF !important; }
+
+body.dark-mode .stat-card {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .stat-card .stat-label { color: #A898C0 !important; }
+body.dark-mode .stat-card .stat-value { color: #C8B8F0 !important; }
+body.dark-mode .stat-card.primary { border-bottom-color: #6A4A9A !important; }
+body.dark-mode .stat-card.success { border-bottom-color: #6A9A7A !important; }
+body.dark-mode .stat-card.completed { border-bottom-color: #6A9A7A !important; }
+body.dark-mode .stat-card.pending { border-bottom-color: #C88A4A !important; }
+
+body.dark-mode .form-card,
+body.dark-mode .result-card,
+body.dark-mode .history-card {
+    background: var(--surface, #1A1228) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .form-group label { color: #B0A0C0 !important; }
+body.dark-mode .form-group select,
+body.dark-mode .form-group input,
+body.dark-mode .form-group textarea {
+    background: #120B1E !important;
+    color: #E8E0F0 !important;
+    border-color: #3A2A4A !important;
+}
+body.dark-mode .form-group select:focus,
+body.dark-mode .form-group input:focus,
+body.dark-mode .form-group textarea:focus {
+    border-color: #6A4A9A !important;
+    box-shadow: 0 0 0 3px rgba(106, 74, 154, 0.3) !important;
+}
+
+body.dark-mode .btn-submit {
+    background: #4A2A7A !important;
+    color: #FFFFFF !important;
+}
+body.dark-mode .btn-submit:hover { background: #5A3A8A !important; }
+body.dark-mode .btn-store {
+    background: #2A5A3A !important;
+    color: #FFFFFF !important;
+}
+body.dark-mode .btn-store:hover { background: #3A6A4A !important; }
+body.dark-mode .btn-add {
+    background: #4A2A7A !important;
+    color: #FFFFFF !important;
+}
+body.dark-mode .btn-add:hover { background: #5A3A8A !important; }
+
+body.dark-mode .ticket-count { color: #BA8AEA !important; }
+body.dark-mode .details { background: #120B1E !important; border-color: #3A2A4A !important; }
+body.dark-mode .info-text { color: #A898C0 !important; }
+
+body.dark-mode .badge-yes {
+    background: #2A5A3A !important;
+    color: #8ACC9A !important;
+}
+body.dark-mode .badge-no {
+    background: #6A2A2A !important;
+    color: #F0A0A0 !important;
+}
+body.dark-mode .badge-winner {
+    background: #7A5A1A !important;
+    color: #F0D080 !important;
+}
+body.dark-mode .badge-reserve {
+    background: #2A4A6A !important;
+    color: #A0C0F0 !important;
+}
+
+body.dark-mode .draws-table {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+}
+body.dark-mode .draws-table th {
+    background: #2A1A3A !important;
+    color: #D8C8F0 !important;
+    border-color: #3A2A4A !important;
+}
+body.dark-mode .draws-table td {
+    color: #E8E0F0 !important;
+    border-color: #3A2A4A !important;
+}
+body.dark-mode .draws-table tr:hover td { background: #2A1A3A !important; }

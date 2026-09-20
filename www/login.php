@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($user && password_verify($password, $user['password'])) {
                 // تسجيل دخول ناجح - إعادة تعيين حد المحاولات
                 resetRateLimit('login');
-                setSessionData($user['id'], $user['username']);
+                setSessionData($user['id'], $user['username'], $user['role']);
                 
                 // تسجيل في سجل التدقيق
                 auditLog($pdo, 'LOGIN_SUCCESS', "User {$username} logged in successfully");

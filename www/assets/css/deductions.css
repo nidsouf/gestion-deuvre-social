@@ -1,5 +1,6 @@
 /* ============================================================
    deductions.css - أنماط قائمة الاقتطاعات
+   مع دعم الوضع الداكن (Purple/Dark Theme)
    ============================================================ */
 
 .deductions-container {
@@ -58,8 +59,6 @@
     transform: translateY(-5px);
     box-shadow: 0 8px 25px rgba(0,0,0,0.1);
 }
-
-/* تأثير البطاقة النشطة (المحددة كفلتر) */
 .stat-card.active-card {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(0,0,0,0.15);
@@ -71,7 +70,6 @@
 .stat-card .stat-value { font-size: 24px; font-weight: 700; margin-top: 6px; }
 .stat-card .stat-value small { font-size: 13px; font-weight: 400; color: #999; }
 
-/* ألوان البطاقات */
 .stat-card.total { border-bottom-color: #2a5298; background: linear-gradient(135deg, #f0f4ff, #ffffff); }
 .stat-card.active { border-bottom-color: #28a745; background: linear-gradient(135deg, #e8f5e9, #ffffff); }
 .stat-card.expiring { border-bottom-color: #ffc107; background: linear-gradient(135deg, #fff8e1, #ffffff); }
@@ -282,7 +280,191 @@
 }
 .modal-actions .btn-confirm-delete:hover { background: #c82333; }
 
-/* ========== استجابة ========== */
+/* ============================================================
+   DARK MODE OVERRIDES (PURPLE/DARK THEME)
+   ============================================================ */
+
+body.dark-mode .deductions-table {
+    background: var(--surface, #1A1228);
+}
+
+body.dark-mode .deductions-table th {
+    background: #2A1A3A !important;
+    color: #D8C8F0 !important;
+}
+
+body.dark-mode .deductions-table td {
+    color: #E8E0F0 !important;
+    border-bottom-color: #3A2A4A !important;
+}
+
+body.dark-mode .deductions-table tr:hover td {
+    background: #2A1A3A !important;
+    color: #FFFFFF !important;
+}
+
+/* ===== روابط وأزرار داخل الجدول ===== */
+body.dark-mode .deductions-table td a,
+body.dark-mode .deductions-table td .btn-sm {
+    color: #BA8AEA !important;
+}
+body.dark-mode .deductions-table td a:hover,
+body.dark-mode .deductions-table td .btn-sm:hover {
+    color: #D8C8F0 !important;
+}
+
+/* ===== نصوص خافتة ===== */
+body.dark-mode .deductions-table td .text-muted,
+body.dark-mode .deductions-table td small,
+body.dark-mode .deductions-table td .installment-unpaid {
+    color: #B0A0C0 !important;
+}
+body.dark-mode .deductions-table td .installment-complete {
+    color: #8ACC9A !important;
+}
+
+/* ===== شريط التقدم ===== */
+body.dark-mode .progress-bar-bg {
+    background: #2A1A3A !important;
+}
+body.dark-mode .progress-bar-fill {
+    background: linear-gradient(90deg, #6A4A9A, #9A6ACA) !important;
+}
+body.dark-mode .progress-label {
+    color: #C8B8F0 !important;
+}
+
+/* ===== البادجات ===== */
+body.dark-mode .status-active {
+    background: #2A5A3A !important;
+    color: #A0E0B0 !important;
+}
+body.dark-mode .status-expiring {
+    background: #7A5A1A !important;
+    color: #F0D080 !important;
+}
+body.dark-mode .status-expired {
+    background: #6A2A2A !important;
+    color: #F0A0A0 !important;
+}
+body.dark-mode .badge-loan {
+    background: #7A4A1A !important;
+    color: #F0D080 !important;
+}
+
+/* ===== بطاقات الإحصائيات ===== */
+body.dark-mode .stat-card {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .stat-card .stat-label {
+    color: #A898C0 !important;
+}
+body.dark-mode .stat-card .stat-value {
+    color: #C8B8F0 !important;
+}
+body.dark-mode .stat-card.total {
+    background: linear-gradient(135deg, #1A1A3A, #1A1228) !important;
+    border-bottom-color: #6A4A9A !important;
+}
+body.dark-mode .stat-card.active {
+    background: linear-gradient(135deg, #1A2A1A, #1A1228) !important;
+    border-bottom-color: #6A9A7A !important;
+}
+body.dark-mode .stat-card.expiring {
+    background: linear-gradient(135deg, #2A2A1A, #1A1228) !important;
+    border-bottom-color: #C88A4A !important;
+}
+body.dark-mode .stat-card.expired {
+    background: linear-gradient(135deg, #2A1A1A, #1A1228) !important;
+    border-bottom-color: #B04A4A !important;
+}
+body.dark-mode .stat-card.loans {
+    background: linear-gradient(135deg, #2A1A2A, #1A1228) !important;
+    border-bottom-color: #C88A4A !important;
+}
+body.dark-mode .stat-card.amount {
+    background: linear-gradient(135deg, #2A1A3A, #1A1228) !important;
+    border-bottom-color: #8A5AC8 !important;
+}
+body.dark-mode .stat-card.active-card {
+    border: 2px solid #8A5AC8 !important;
+}
+
+/* ===== الفلاتر ===== */
+body.dark-mode .filter-section {
+    background: var(--surface, #1A1228) !important;
+    border-color: var(--border, #3A2A4A) !important;
+}
+body.dark-mode .filter-group {
+    background: #120B1E !important;
+    border-color: #3A2A4A !important;
+}
+body.dark-mode .filter-group label {
+    color: #B0A0C0 !important;
+}
+body.dark-mode .filter-group select,
+body.dark-mode .filter-group input {
+    color: #E8E0F0 !important;
+}
+body.dark-mode .filter-group select:focus,
+body.dark-mode .filter-group input:focus {
+    background: #1A1228 !important;
+    box-shadow: 0 0 0 2px rgba(106, 74, 154, 0.3) !important;
+}
+
+/* ===== المودال ===== */
+body.dark-mode .modal-box {
+    background: var(--surface, #1A1228) !important;
+    color: var(--text, #E8E0F0) !important;
+}
+body.dark-mode .modal-box h3 {
+    color: #F0A0A0 !important;
+}
+body.dark-mode .modal-box .text-muted {
+    color: #B0A0C0 !important;
+}
+
+/* ===== الأزرار العامة ===== */
+body.dark-mode .btn-add {
+    background: #4A2A7A !important;
+}
+body.dark-mode .btn-add:hover {
+    background: #5A3A8A !important;
+}
+
+body.dark-mode .btn-filter {
+    background: #4A2A7A !important;
+}
+body.dark-mode .btn-filter:hover {
+    background: #5A3A8A !important;
+}
+
+body.dark-mode .btn-reset {
+    background: #3A2A4A !important;
+    color: #C8B8F0 !important;
+}
+body.dark-mode .btn-reset:hover {
+    background: #4A3A5A !important;
+}
+
+body.dark-mode .btn-view {
+    background: #2A4A6A !important;
+}
+body.dark-mode .btn-view:hover {
+    background: #3A5A7A !important;
+}
+body.dark-mode .btn-delete {
+    background: #6A2A2A !important;
+}
+body.dark-mode .btn-delete:hover {
+    background: #8A3A3A !important;
+}
+
+/* ============================================================
+   استجابة
+   ============================================================ */
 @media (max-width: 768px) {
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .deductions-header { flex-direction: column; align-items: stretch; text-align: center; }
@@ -295,4 +477,59 @@
 }
 @media (max-width: 480px) {
     .stats-grid { grid-template-columns: 1fr; }
+}
+/* ============================================================
+   إصلاح خلفية جدول الاقتطاعات في الوضع الداكن
+   ============================================================ */
+
+/* 1. خلفية الجدول بالكامل */
+body.dark-mode .deductions-table,
+body.dark-mode .table-deductions,
+body.dark-mode .table,
+body.dark-mode .table-striped {
+    background-color: #1A1228 !important;
+}
+
+/* 2. خلفية جميع الصفوف */
+body.dark-mode .deductions-table tbody tr,
+body.dark-mode .table-deductions tbody tr,
+body.dark-mode .table-striped tbody tr {
+    background-color: #1A1228 !important;
+}
+
+/* 3. الصفوف الزوجية (لتناوب الألوان) */
+body.dark-mode .deductions-table tbody tr:nth-child(even),
+body.dark-mode .table-deductions tbody tr:nth-child(even),
+body.dark-mode .table-striped tbody tr:nth-child(even) {
+    background-color: #221733 !important;
+}
+
+/* 4. عند التمرير على الصف */
+body.dark-mode .deductions-table tbody tr:hover,
+body.dark-mode .table-deductions tbody tr:hover,
+body.dark-mode .table-striped tbody tr:hover {
+    background-color: #2A1A3A !important;
+}
+
+/* 5. الخلايا نفسها (لضمان عدم وجود خلفية منفصلة) */
+body.dark-mode .deductions-table td,
+body.dark-mode .table-deductions td,
+body.dark-mode .table-striped td {
+    background-color: transparent !important;
+    color: #FFFFFF !important;
+}
+
+/* 6. النصوص داخل الخلايا */
+body.dark-mode .deductions-table td *,
+body.dark-mode .table-deductions td *,
+body.dark-mode .table-striped td * {
+    color: #FFFFFF !important;
+}
+
+/* 7. إلغاء أي شفافية */
+body.dark-mode .deductions-table,
+body.dark-mode .deductions-table tbody,
+body.dark-mode .deductions-table tr,
+body.dark-mode .deductions-table td {
+    opacity: 1 !important;
 }

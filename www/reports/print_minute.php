@@ -11,22 +11,6 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 
 // ============================================================
-// معالجة المعاملات
-// ============================================================
-$month = isset($_GET['month']) ? (int)$_GET['month'] : date('m');
-$year = isset($_GET['year']) ? (int)$_GET['year'] : date('Y');
-
-// تصحيح القيم غير الصالحة
-if ($month < 1 || $month > 12) {
-    $month = date('m');
-}
-if ($year < 2000 || $year > 2100) {
-    $year = date('Y');
-}
-
-// ... باقي الكود ...
-
-// ============================================================
 // دوال مساعدة للتواريخ
 // ============================================================
 $arabicMonths = [
@@ -65,6 +49,10 @@ $meeting_number = isset($_GET['meeting_number']) ? $_GET['meeting_number'] : '';
 $meeting_date = isset($_GET['meeting_date']) ? $_GET['meeting_date'] : date('Y-m-d');
 $meeting_time = isset($_GET['meeting_time']) ? $_GET['meeting_time'] : '10:00';
 $closing_time = isset($_GET['closing_time']) ? $_GET['closing_time'] : '11:00';
+
+// تصحيح القيم غير الصالحة
+if ($month < 1 || $month > 12) $month = (int)date('m');
+if ($year < 2000 || $year > 2100) $year = (int)date('Y');
 
 $month_name_ar = $arabicMonths[$month] . ' ' . $year;
 $year_month = sprintf("%04d-%02d", $year, $month);
@@ -156,14 +144,50 @@ if (in_array($month, [3,6,9,12])) {
 }
 
 // ============================================================
-// 4. جيزي (اختياري حسب المحضر)
+// 4. الهواتف (النظام الجديد) - استبدال نظام جيزي القديم
 // ============================================================
 $show_djezzy = !empty($minute['show_djezzy']);
-$djezzy_monthly_total = 0;
+$djezzy_monthly_total = 0;   // إجمالي الاقتطاعات الشهرية من الموظفين
+$djezzy_due_amount = 0;      // المبلغ الإجمالي المستحق (من الشيكات المدفوعة)
+
 if ($show_djezzy) {
-    $stmtDjezzy = $pdo->prepare("SELECT COALESCE(SUM(epn.monthly_amount), 0) as total FROM employee_phone_numbers epn WHERE epn.is_active = 1");
-    $stmtDjezzy->execute();
-    $djezzy_monthly_total = $stmtDjezzy->fetchColumn();
+    // أ. الاقتطاعات الشهرية النشطة من جدول الهواتف
+    $stmtPhone = $pdo->prepare("
+        SELECT COALESCE(SUM(epn.monthly_amount), 0) as total 
+        FROM employee_phone_numbers epn 
+        WHERE epn.is_active = 1
+    ");
+    $stmtPhone->execute();
+    $djezzy_monthly_total = $stmtPhone->fetchColumn();
+
+    // ب. المبلغ الإجمالي المستحق (من مصدر "هاتف" في source_payments)
+    $sourcePhone = $pdo->query("
+        SELECT id FROM sources 
+        WHERE name = 'هاتف' 
+           OR name LIKE '%هاتف%' 
+           OR name LIKE '%Phone%' 
+           OR name LIKE '%phone%'
+        LIMIT 1
+    ")->fetchColumn();
+
+    if ($sourcePhone) {
+        $stmtPhoneDue = $pdo->prepare("
+            SELECT COALESCE(SUM(amount), 0) as total
+            FROM source_payments
+            WHERE source_id = :source_id
+              AND strftime('%Y-%m', cheque_date) = :year_month
+        ");
+        $stmtPhoneDue->execute([
+            ':source_id' => $sourcePhone,
+            ':year_month' => $year_month
+        ]);
+        $djezzy_due_amount = $stmtPhoneDue->fetchColumn();
+    }
+
+    // ج. احتياطي: إذا لم يوجد شيك مسجل، نستخدم قيمة الاقتطاعات
+    if ($djezzy_due_amount == 0 && $djezzy_monthly_total > 0) {
+        $djezzy_due_amount = $djezzy_monthly_total;
+    }
 }
 
 // ============================================================
@@ -222,14 +246,15 @@ if ($show_cheques) {
 // ============================================================
 // 8. حساب المجموع الكلي
 // ============================================================
+// ✅ نستخدم $djezzy_due_amount (المبلغ المستحق الفعلي) بدلاً من $djezzy_monthly_total
 if ($show_cheques) {
     $total_minute_amount = $totalGrants + $totalLoans 
-                         + ($show_djezzy ? $djezzy_monthly_total : 0) 
+                         + ($show_djezzy ? $djezzy_due_amount : 0) 
                          + $totalHonorValue 
                          + $total_cheques;
 } else {
     $total_minute_amount = $totalGrants + $totalLoans 
-                         + ($show_djezzy ? $djezzy_monthly_total : 0) 
+                         + ($show_djezzy ? $djezzy_due_amount : 0) 
                          + $saadine_paid  
                          + $totalHonorValue;
 }
@@ -266,59 +291,53 @@ include '../includes/header.php';
 
 <style media="print">
     @media print {
-    .no-print { display: none; }
-    body { margin: 0.8cm; padding: 0; }
-    .minute-content { font-size: 14pt; line-height: 1.4; }
-    
-    table { 
-        width: 100%; 
-        border-collapse: collapse; 
-        font-size: 14pt;           /* ← حجم الخط 11pt */
-        margin: 0; 
-        padding: 0;
+        .no-print { display: none; }
+        body { margin: 0.8cm; padding: 0; }
+        .minute-content { font-size: 14pt; line-height: 1.4; }
+        
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 14pt;
+            margin: 0; 
+            padding: 0;
+        }
+        th, td { 
+            border: 1px solid #000; 
+            padding: 4px 8px !important;
+            text-align: center; 
+            line-height: 1.3 !important;
+            height: auto !important; 
+            min-height: 0 !important;
+            vertical-align: middle; 
+        }
+        th { background: #f0f0f0; }
+        
+        table, tbody, tr, td, th {
+            border-spacing: 0;
+            border-collapse: collapse;
+            margin: 0;
+            padding: 0;
+        }
+        
+        h4, .section-title, p { margin: 6px 0; }
+        ul { margin: 5px 0; padding-right: 20px; }
+        
+        .sidebar, .top-bar, .filters, .btn, .btn-primary, .btn-success, .btn-secondary, .no-print, .footer {
+            display: none !important;
+        }
+        .main-content { margin: 0 !important; padding: 0 !important; }
+        body { margin: 0; padding: 0; background: white; }
+        .signatures { 
+            display: flex !important; 
+            flex-direction: row !important; 
+            justify-content: space-between !important; 
+            width: 100% !important; 
+            margin-top: 20px !important;
+        }
+        .signature-item { flex: 1 !important; text-align: center !important; }
+        .signature-line { border-bottom: 1px solid #000; width: 80%; margin: 0 auto 3px auto; }
     }
-    th, td { 
-        border: 1px solid #000; 
-        padding: 4px 8px !important;   /* ← padding معتدل (4 أعلى/أسفل، 8 يمين/يسار) */
-        text-align: center; 
-        line-height: 1.3 !important;   /* ← ارتفاع سطر مناسب */
-        height: auto !important; 
-        min-height: 0 !important;
-        vertical-align: middle; 
-    }
-    th { background: #f0f0f0; }
-    
-    /* إزالة أي تباعد إضافي */
-    table, tbody, tr, td, th {
-        border-spacing: 0;
-        border-collapse: collapse;
-        margin: 0;
-        padding: 0;
-    }
-    
-    h4, .section-title, p {
-        margin: 6px 0;
-    }
-    ul {
-        margin: 5px 0;
-        padding-right: 20px;
-    }
-    
-    .sidebar, .top-bar, .filters, .btn, .btn-primary, .btn-success, .btn-secondary, .no-print, .footer {
-        display: none !important;
-    }
-    .main-content { margin: 0 !important; padding: 0 !important; }
-    body { margin: 0; padding: 0; background: white; }
-    .signatures { 
-        display: flex !important; 
-        flex-direction: row !important; 
-        justify-content: space-between !important; 
-        width: 100% !important; 
-        margin-top: 20px !important;
-    }
-    .signature-item { flex: 1 !important; text-align: center !important; }
-    .signature-line { border-bottom: 1px solid #000; width: 80%; margin: 0 auto 3px auto; }
-}
 </style>
 
 <div class="minute-container" style="direction: rtl; font-family: 'Traditional Arabic', 'Segoe UI', 'Tahoma', serif; font-size: 14pt; line-height: 1.6; padding: 20px; max-width: 1000px; margin: auto;">
@@ -358,12 +377,12 @@ include '../includes/header.php';
         <li>دراسة واعتماد المنح المقدمة للموظفين خلال شهر <?= $month_name_ar ?>.</li>
         <li>متابعة السلف الممنوحة للموظفين.</li>
         <?php if ($show_djezzy): ?>
-        <li>إجمالي الاقتطاعات الشهرية لجيزي.</li>
+        <li>إجمالي الاقتطاعات الشهرية للهواتف والمبلغ المستحق.</li>
         <?php endif; ?>
         <li>تسديد مستحقات سعدين للتجهير.</li>
         <?php if (!$show_cheques): ?>
-    <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
-    <?php endif; ?>
+        <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
+        <?php endif; ?>
         <?php if (!empty($honorees)): ?>
         <li>الاطلاع على قائمة المكرمين في عيد العمال للسنة <?= $minute['honorees_year'] ?>.</li>
         <?php endif; ?>
@@ -378,9 +397,13 @@ include '../includes/header.php';
     <table style="width:100%; border-collapse: collapse; margin: 15px 0;">
         <thead><tr><th>#</th><th>الموظف</th><th>نوع المنحة</th><th>المبلغ (دج)</th><th>تاريخ المنح</th><th>السبب</th></tr></thead>
         <tbody><?php $i=1; foreach($grants as $g): ?>
-        <tr><td style="text-align:center"><?= $i++ ?></td><td><?= htmlspecialchars($g['employee_name']) ?><br><small style="font-size:12pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($g['account_number'] ?? '—') ?></small></td>
-        <td><?= htmlspecialchars($g['grant_name']) ?></td><td><?= number_format($g['amount'], 2) ?></td>
-        <td><?= safeFormatDate($g['grant_date']) ?></td><td><?= htmlspecialchars($g['notes'] ?? '') ?></td>
+        <tr>
+            <td style="text-align:center"><?= $i++ ?></td>
+            <td><?= htmlspecialchars($g['employee_name']) ?><br><small style="font-size:12pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($g['account_number'] ?? '—') ?></small></td>
+            <td><?= htmlspecialchars($g['grant_name']) ?></td>
+            <td><?= number_format($g['amount'], 2) ?></td>
+            <td><?= safeFormatDate($g['grant_date']) ?></td>
+            <td><?= htmlspecialchars($g['notes'] ?? '') ?></td>
         </tr>
         <?php endforeach; ?></tbody>
         <tfoot>
@@ -398,12 +421,13 @@ include '../includes/header.php';
     <table style="width:100%; border-collapse: collapse; margin: 15px 0;">
         <thead><tr><th>#</th><th>الموظف</th><th>نوع السلفة</th><th>المبلغ الكلي (دج)</th><th>تاريخ الصرف</th><th>تاريخ بداية الاقتطاع</th></tr></thead>
         <tbody><?php $i=1; foreach($loans as $l): ?>
-        <tr><td style="text-align:center"><?= $i++ ?></td>
-        <td><?= htmlspecialchars($l['employee_name']) ?><br><small style="font: size 12px;pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($g['account_number'] ?? '—') ?></small></td>
-        <td><?= htmlspecialchars($l['source_name']) ?></td>
-        <td><?= number_format($l['total_amount'], 2) ?></td>
-        <td><?= safeFormatDate($l['display_grant_date']) ?></td>
-        <td><?= safeFormatDate($l['start_date']) ?></td>
+        <tr>
+            <td style="text-align:center"><?= $i++ ?></td>
+            <td><?= htmlspecialchars($l['employee_name']) ?><br><small style="font-size:12pt; color:#555; font-weight:bold;">حساب: <?= htmlspecialchars($l['account_number'] ?? '—') ?></small></td>
+            <td><?= htmlspecialchars($l['source_name']) ?></td>
+            <td><?= number_format($l['total_amount'], 2) ?></td>
+            <td><?= safeFormatDate($l['display_grant_date']) ?></td>
+            <td><?= safeFormatDate($l['start_date']) ?></td>
         </tr>
         <?php endforeach; ?></tbody>
         <tfoot>
@@ -419,13 +443,12 @@ include '../includes/header.php';
     <h4>3. الاقتطاعات والتسديدات:</h4>
     <ul>
         <?php if ($show_djezzy): ?>
-        <li>إجمالي الاقتطاعات الشهرية لجيزي: <strong><?= number_format($djezzy_monthly_total, 2) ?> دج</strong></li>
+            <li>إجمالي الاقتطاعات الشهرية للهواتف: <strong><?= number_format($djezzy_monthly_total, 2) ?> دج</strong></li>
+            <li>إجمالي المبلغ المستحق للهواتف: <strong><?= number_format($djezzy_due_amount, 2) ?> دج</strong></li>
         <?php endif; ?>
-        <li>إجمالي المبلغ المستحق لجيزي: <strong>28,300.00 دج</strong></li>
-        <?php if (!$show_cheques): ?>
-    <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
-    <?php endif; ?>
-        
+        <?php if (!$show_cheques && $saadine_paid > 0): ?>
+            <li>تسديد مستحقات سعدين للتجهير: <strong><?= number_format($saadine_paid, 2) ?> دج</strong></li>
+        <?php endif; ?>
     </ul>
 
     <!-- الشيكات -->
@@ -434,7 +457,15 @@ include '../includes/header.php';
     <table style="width:100%; border-collapse: collapse; margin: 15px 0;">
         <thead><tr><th>#</th><th>المصدر</th><th>رقم الشيك</th><th>التاريخ</th><th>الربع</th><th>المبلغ (دج)</th><th>ملاحظات</th></tr></thead>
         <tbody><?php $i=1; foreach($cheques as $ch): ?>
-        <tr><td style="text-align:center"><?= $i++ ?></td><td><?= htmlspecialchars($ch['source_name']) ?></td><td><?= htmlspecialchars($ch['cheque_number'] ?? '-') ?></td><td><?= safeFormatDate($ch['cheque_date']) ?></td><td><?= $ch['quarter'] ? 'الربع '.$ch['quarter'] : '---' ?></td><td><?= number_format($ch['amount'], 2) ?> دج</td><td><?= htmlspecialchars($ch['notes'] ?? '-') ?></td></tr>
+        <tr>
+            <td style="text-align:center"><?= $i++ ?></td>
+            <td><?= htmlspecialchars($ch['source_name']) ?></td>
+            <td><?= htmlspecialchars($ch['cheque_number'] ?? '-') ?></td>
+            <td><?= safeFormatDate($ch['cheque_date']) ?></td>
+            <td><?= $ch['quarter'] ? 'الربع '.$ch['quarter'] : '---' ?></td>
+            <td><?= number_format($ch['amount'], 2) ?> دج</td>
+            <td><?= htmlspecialchars($ch['notes'] ?? '-') ?></td>
+        </tr>
         <?php endforeach; ?></tbody>
         <tfoot>
             <tr>
@@ -478,7 +509,14 @@ include '../includes/header.php';
         <h4>🎖️ المكرمون في عيد العمال (سنة <?= $minute['honorees_year'] ?>)</h4>
         <table style="width:100%; border-collapse: collapse;"><thead><tr><th>#</th><th>الموظف</th><th>نوع الجائزة</th><th>القيمة (دج)</th><th>تاريخ التكريم</th><th>سبب التكريم</th></tr></thead>
         <tbody><?php $i=1; foreach($honorees as $h): ?>
-        <tr><td style="text-align:center"><?= $i++ ?></td><td style="text-align:center"><?= htmlspecialchars($h['employee_name']) ?><br><small>(<?= $h['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?>)</small></td><td style="text-align:center"><?= htmlspecialchars($h['prize_type']) ?></td><td style="text-align:center"><?= number_format($h['prize_value'], 2) ?> دج</td><td style="text-align:center"><?= safeFormatDate($h['honor_date']) ?></td><td style="text-align:center"><?= htmlspecialchars($h['reason']) ?></td></tr>
+        <tr>
+            <td style="text-align:center"><?= $i++ ?></td>
+            <td style="text-align:center"><?= htmlspecialchars($h['employee_name']) ?><br><small>(<?= $h['category'] == 'Permanent' ? 'دائم' : 'متعاقد' ?>)</small></td>
+            <td style="text-align:center"><?= htmlspecialchars($h['prize_type']) ?></td>
+            <td style="text-align:center"><?= number_format($h['prize_value'], 2) ?> دج</td>
+            <td style="text-align:center"><?= safeFormatDate($h['honor_date']) ?></td>
+            <td style="text-align:center"><?= htmlspecialchars($h['reason']) ?></td>
+        </tr>
         <?php endforeach; ?></tbody>
         <tfoot>
             <tr>
